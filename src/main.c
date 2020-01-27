@@ -83,15 +83,16 @@ Status sendCommands(SSD1306 *dev, uint8_t commands[], uint8_t numCommands)
 
     uint8_t commandAddress = 0; // D/C = 0, Co = 0
 
-    uint8_t commandBuffer[2 * 256]; // Size hardcoded to type of `numCommands`
+    // Probably a nicer way of doing this?
+    uint8_t commandBuffer[1 + 256]; // Size hardcoded to type of `numCommands`
 
-    // Commands are interspsered with the commandAddress
+    // Starts with the commandAddress
+    commandBuffer[0] = commandAddress;
     for (int i = 0; i < numCommands; i++)
     {
-        commandBuffer[2 * i] = commandAddress;
-        commandBuffer[2 * i + 1] = commands[i];
+        commandBuffer[i + 1] = commands[i];
     }
-    return i2cSendBytes(I2C2, dev->address, commandBuffer, 2 * numCommands);
+    return i2cSendBytes(I2C2, dev->address, commandBuffer, 1 + numCommands);
 }
 
 Status init(SSD1306 *dev)
@@ -283,11 +284,32 @@ int main(void)
     init(&dev);
 
     // Send some data
-    for (int i = 0; i < 32 * 128 / 2 / 8; i++)
+
+    // Set where to write the data to
+    uint8_t commands[] = {
+        // Set page address
+        0x22, // Command
+        0,    // Page start
+        0xFF, // Page end (not really, but it'll do according to adafruit)
+        // Set Column Address
+        0x21,   // Command
+        0,      // Column Start
+        128 - 1 // Column end (128x32)
+    };
+    sendCommands(&dev, commands, 6);
+
+    // Delay
+    for (int i = 0; i < 10000; i++)
+    {
+        __asm__("nop");
+    }
+
+    // Send the data
+    for (int i = 0; i < 32 * 128 / 8; i++)
     {
         uint8_t bytes[] = {
             0x40, // D/C, Co command
-            0xFF};
+            i};
         i2cSendBytes(i2c, dev.address, bytes, 2);
     }
 
