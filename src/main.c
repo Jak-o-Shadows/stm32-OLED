@@ -285,6 +285,12 @@ int main(void)
 
     // Send some data
 
+    // Delay
+    for (int i = 0; i < 10000; i++)
+    {
+        __asm__("nop");
+    }
+
     // Set where to write the data to
     uint8_t commands[] = {
         // Set page address
@@ -292,11 +298,14 @@ int main(void)
         0,    // Page start
         0xFF, // Page end (not really, but it'll do according to adafruit)
         // Set Column Address
-        0x21,   // Command
-        0,      // Column Start
+        0x21, // Command
+        0     // Column Start
+    };
+    sendCommands(&dev, commands, 5);
+    uint8_t commands2[] = {
         128 - 1 // Column end (128x32)
     };
-    sendCommands(&dev, commands, 6);
+    sendCommands(&dev, commands2, 1);
 
     // Delay
     for (int i = 0; i < 10000; i++)
@@ -313,9 +322,25 @@ int main(void)
         i2cSendBytes(i2c, dev.address, bytes, 2);
     }
 
+    bool inverted = false;
+    uint8_t commandsInvert[1];
     while (1)
     {
-        __asm__("nop");
+        for (int i = 0; i < 5000000; i++)
+        {
+            __asm__("nop");
+        }
+        // Then invert display
+        if (inverted)
+        {
+            commandsInvert[0] = 0xA7;
+        }
+        else
+        {
+            commandsInvert[0] = 0xA6;
+        }
+        sendCommands(&dev, commandsInvert, 1);
+        inverted = !inverted;
     }
 }
 
