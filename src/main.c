@@ -7,6 +7,7 @@
 #include <libopencm3/cm3/nvic.h>
 
 #include <stdint.h>
+#include <string.h>
 
 typedef enum Status_e
 {
@@ -105,9 +106,9 @@ Status init(SSD1306 *dev)
         0xD3, // Command
         0x00, // Command payload, (No Offset)
         // Display Start line
-        0x40,
+        0x40, // 0x40 + bits (up to 7F)
         // Segment Re-Map
-        0xA1, // Loop around when writing data back to zero
+        0xA1, // Loop around when writing data back to zero (matches adafruit library)
         // Set COM port outputs and direction
         0xC8, // Remapped mode. N-1 to 0 (matches adafruit library)
         // Set COM Pins hardware configuration
@@ -120,6 +121,9 @@ Status init(SSD1306 *dev)
         0xAE,
         // Set normal display
         0xA6, // 1 = on, 0 = off per pixel
+        // Set memory mode
+        0x20, // Set memory mode command
+        0x00, // b00 = horizontal
         // Set Oscillator Frequency
         0xD5, // Command
         0x80, // Recommended value (p64 of App Note)
@@ -307,26 +311,45 @@ int main(void)
     };
     sendCommands(&dev, commands2, 1);
 
+    // Set the whole thing off
+    for (int pxByte = 0; pxByte < 128 * 32 / 8; pxByte++)
+    {
+        uint8_t bytes[] = {
+            0x40,
+            pxByte};
+        sendCommands(&dev, bytes, 2);
+    }
+    /*
+    sendCommands(&dev, commands, 5);
+    sendCommands(&dev, commands2, 1);
+
     // Delay
     for (int i = 0; i < 10000; i++)
     {
         __asm__("nop");
     }
 
-    // Send the data
-    for (int i = 0; i < 32 * 128 / 8; i++)
-    {
-        uint8_t bytes[] = {
-            0x40, // D/C, Co command
-            i};
-        i2cSendBytes(i2c, dev.address, bytes, 2);
-    }
+    uint8_t line[128 + 1];
+    memset(&line, 0xFF, 128);
+    line[0] = 0x40;
 
+    // Send the data
+    for (int i = 0; i < 32 / 8; i++)
+    {
+        //uint8_t bytes[] = {
+        //    0x40, // D/C, Co command
+        //    0xFF};
+
+        i2cSendBytes(i2c, dev.address, line, 128 + 1);
+        memset(&line[1], 0xFF * (i % 2), 128);
+    }
+*/
     bool inverted = false;
     uint8_t commandsInvert[1];
-    while (1)
+
+    for (int invertCount = 0; invertCount < 51; invertCount++)
     {
-        for (int i = 0; i < 5000000; i++)
+        for (int i = 0; i < 1000000; i++)
         {
             __asm__("nop");
         }
@@ -341,6 +364,11 @@ int main(void)
         }
         sendCommands(&dev, commandsInvert, 1);
         inverted = !inverted;
+    }
+
+    while (1)
+    {
+        __asm__("nop");
     }
 }
 
