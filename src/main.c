@@ -7,6 +7,7 @@
 #include <libopencm3/cm3/nvic.h>
 
 #include <stdint.h>
+#include <string.h>
 
 typedef enum Status_e
 {
@@ -95,6 +96,41 @@ Status sendCommands(SSD1306 *dev, uint8_t commands[], uint8_t numCommands)
     return i2cSendBytes(I2C2, dev->address, commandBuffer, 1 + numCommands);
 }
 
+// From https://www.ccsinfo.com/forum/viewtopic.php?t=54453
+#define COMMAND_ONLY 0b00000000 //next byte is a command only
+#define DATA_ONLY 0b01000000    //next byte is data
+
+//directly from the data sheet - commands - not all used
+#define S_EXTERNALVCC 0x1
+#define S_SWITCHCAPVCC 0x2
+#define S_SETLOWCOLUMN 0x00
+#define S_SETHIGHCOLUMN 0x10
+#define S_MEMORYMODE 0x20
+#define S_COLUMNADDR 0x21
+#define S_PAGEADDR 0x22
+#define S_SETSTARTLINE 0x40
+#define S_ROWADDRESS 0xB0
+#define S_SETCONTRAST 0x81
+#define S_CHARGEPUMP 0x8D
+#define S_SEGREMAP 0xA0
+#define S_DISPLAYALLON_RESUME 0xA4
+#define S_DISPLAYALLON 0xA5
+#define S_NORMALDISPLAY 0xA6
+#define S_INVERTDISPLAY 0xA7
+#define S_SETMULTIPLEX 0xA8
+#define S_DISPLAYOFF 0xAE
+#define S_DISPLAYON 0xAF
+#define S_COMSCANINC 0xC0
+#define S_COMSCANDEC 0xC8
+#define S_SETDISPLAYOFFSET 0xD3
+#define S_SETCOMPINS 0xDA
+#define S_SETVCOMDETECT 0xDB
+#define S_SETDISPLAYCLOCKDIV 0xD5
+#define S_SETPRECHARGE 0xD9
+#define DIV_RATIO 0x80     //recommended ratio
+#define MULTIPLEX (32 - 1) //0x3F //and multiplex
+#define INT_VCC 0x14
+
 Status init(SSD1306 *dev)
 {
 
@@ -129,8 +165,67 @@ Status init(SSD1306 *dev)
         // Display on
         0xAF};
 
-    static const uint8_t numCommands = 17;
-    return sendCommands(dev, commands, numCommands);
+    /*
+    const uint8_t init_sequence[] = {
+        S_DISPLAYOFF,
+        S_SETDISPLAYCLOCKDIV,
+        DIV_RATIO,
+        S_SETMULTIPLEX,
+        MULTIPLEX,
+        S_SETDISPLAYOFFSET,
+        0, // no offset
+        S_SETSTARTLINE,
+        S_CHARGEPUMP,
+        INT_VCC,            // using internal VCC
+        S_MEMORYMODE,       //Since byte is vertical writing column by column
+        0,                  // set to horizontal mode
+        (S_SEGREMAP | 0x1), // rotate screen 180
+        S_COMSCANDEC,
+        S_SETCOMPINS,
+        0x02, // specifix to 32 px high
+        S_SETCONTRAST,
+        0xCF, //experiment.... 0xCf for 1306
+        S_SETPRECHARGE,
+        0xF1,
+        S_SETVCOMDETECT,
+        0x40,
+        S_DISPLAYALLON_RESUME,
+        S_NORMALDISPLAY,
+        S_DISPLAYON //switch on OLED
+    };
+    static const uint8_t numCommands = 25; //17;
+*/
+
+    const uint8_t init_sequence[] = {
+        S_DISPLAYOFF,
+        S_SETDISPLAYCLOCKDIV,
+        DIV_RATIO,
+        S_SETMULTIPLEX,
+        MULTIPLEX,
+        S_SETDISPLAYOFFSET,
+        0, // no offset
+        S_SETSTARTLINE,
+        S_CHARGEPUMP,
+        INT_VCC,            // using internal VCC
+        S_MEMORYMODE,       //Since byte is vertical writing column by column
+        0,                  // set to horizontal mode
+        (S_SEGREMAP | 0x1), // rotate screen 180
+        S_COMSCANDEC,
+        S_SETCOMPINS,
+        0x02, // specifix to 32 px high
+        S_SETCONTRAST,
+        0xCF, //experiment.... 0xCf for 1306
+        S_SETPRECHARGE,
+        0xF1,
+        S_SETVCOMDETECT,
+        0x40,
+        S_DISPLAYALLON_RESUME,
+        S_NORMALDISPLAY,
+        S_DISPLAYON //switch on OLED
+    };
+    static const uint8_t numCommands = 25; //17;
+
+    return sendCommands(dev, init_sequence, numCommands);
 
     return STATUSok;
 }
@@ -265,6 +360,20 @@ void i2c_setup(void)
 ////////////// Main Loop   //////////////////////////
 /////////////////////////////////////////////////////
 
+void OLED_address(SSD1306 *dev, uint8_t x, uint8_t y)
+{
+    uint8_t commands[] = {
+        // Set column addressing
+        0x21,
+        0x00,
+        128 - 1,
+        // Set page addressing extents
+        0x22,
+        0x00,
+        32 / 8 - 1};
+    sendCommands(dev, commands, 6);
+}
+
 int main(void)
 {
     clock_setup();
@@ -291,35 +400,49 @@ int main(void)
         __asm__("nop");
     }
 
-    // Set where to write the data to
-    uint8_t commands[] = {
-        // Set page address
-        0x22, // Command
-        0,    // Page start
-        0xFF, // Page end (not really, but it'll do according to adafruit)
-        // Set Column Address
-        0x21, // Command
-        0     // Column Start
-    };
-    sendCommands(&dev, commands, 5);
-    uint8_t commands2[] = {
-        128 - 1 // Column end (128x32)
-    };
-    sendCommands(&dev, commands2, 1);
-
-    // Delay
-    for (int i = 0; i < 10000; i++)
-    {
-        __asm__("nop");
-    }
-
-    // Send the data
-    for (int i = 0; i < 32 * 128 / 8; i++)
+    // Clear the display
+    OLED_address(&dev, 0, 0);
+    for (int pxByte = 0; pxByte < 128 * 32 / 8; pxByte++)
     {
         uint8_t bytes[] = {
-            0x40, // D/C, Co command
-            i};
-        i2cSendBytes(i2c, dev.address, bytes, 2);
+            0x40,
+            0};
+        i2cSendBytes(I2C2, dev.address, bytes, 2);
+    }
+
+    OLED_address(&dev, 0, 0);
+
+    uint8_t lineCommand[128 / 8 + 1];
+    uint8_t pattern[] = {0b010101010, 0b101010101};
+
+    bool lineOn = false;
+
+    // Send the data
+    //for (int repeat = 0; repeat < 1; repeat++)
+    {
+        for (int row = 0; row < 32; row++)
+        {
+            if (lineOn)
+            {
+                memset(lineCommand, pattern[0], 128 / 8 + 1);
+            }
+            else
+            {
+                memset(lineCommand, pattern[1], 128 / 8 + 1);
+            }
+            lineOn = !lineOn;
+            lineCommand[0] = 0x40;
+            i2cSendBytes(I2C2, dev.address, lineCommand, 128 / 8 + 1);
+            /*
+            for (int i = 0; i < 128 / 8; i++)
+            {
+                uint8_t bytes[] = {
+                    0x40,
+                    0xFF * (i % 2)};
+                i2cSendBytes(I2C2, dev.address, bytes, 2);
+            }
+            */
+        }
     }
 
     bool inverted = false;
@@ -339,7 +462,7 @@ int main(void)
         {
             commandsInvert[0] = 0xA6;
         }
-        sendCommands(&dev, commandsInvert, 1);
+        //sendCommands(&dev, commandsInvert, 1);
         inverted = !inverted;
     }
 }
