@@ -96,41 +96,6 @@ Status sendCommands(SSD1306 *dev, uint8_t commands[], uint8_t numCommands)
     return i2cSendBytes(I2C2, dev->address, commandBuffer, 1 + numCommands);
 }
 
-// From https://www.ccsinfo.com/forum/viewtopic.php?t=54453
-#define COMMAND_ONLY 0b00000000 //next byte is a command only
-#define DATA_ONLY 0b01000000    //next byte is data
-
-//directly from the data sheet - commands - not all used
-#define S_EXTERNALVCC 0x1
-#define S_SWITCHCAPVCC 0x2
-#define S_SETLOWCOLUMN 0x00
-#define S_SETHIGHCOLUMN 0x10
-#define S_MEMORYMODE 0x20
-#define S_COLUMNADDR 0x21
-#define S_PAGEADDR 0x22
-#define S_SETSTARTLINE 0x40
-#define S_ROWADDRESS 0xB0
-#define S_SETCONTRAST 0x81
-#define S_CHARGEPUMP 0x8D
-#define S_SEGREMAP 0xA0
-#define S_DISPLAYALLON_RESUME 0xA4
-#define S_DISPLAYALLON 0xA5
-#define S_NORMALDISPLAY 0xA6
-#define S_INVERTDISPLAY 0xA7
-#define S_SETMULTIPLEX 0xA8
-#define S_DISPLAYOFF 0xAE
-#define S_DISPLAYON 0xAF
-#define S_COMSCANINC 0xC0
-#define S_COMSCANDEC 0xC8
-#define S_SETDISPLAYOFFSET 0xD3
-#define S_SETCOMPINS 0xDA
-#define S_SETVCOMDETECT 0xDB
-#define S_SETDISPLAYCLOCKDIV 0xD5
-#define S_SETPRECHARGE 0xD9
-#define DIV_RATIO 0x80     //recommended ratio
-#define MULTIPLEX (32 - 1) //0x3F //and multiplex
-#define INT_VCC 0x14
-
 Status init(SSD1306 *dev)
 {
 
@@ -139,93 +104,48 @@ Status init(SSD1306 *dev)
         0xAE,
         // Display Offset
         0xD3, // Command
-        0x00, // Command payload, (No Offset)
+        0,    // Command payload, (No Offset)
         // Display Start line
         0x40,
         // Segment Re-Map
-        0xA1, // Loop around when writing data back to zero
-        // Set COM port outputs and direction
-        0xC8, // Remapped mode. N-1 to 0 (matches adafruit library)
-        // Set COM Pins hardware configuration
-        0xDA, // Set COM Pins command
-        0x02, // For 128x32 matrix
-        // Set Contrast
-        0x81, // Set contrast command
-        0x8F, // Contrast value (0->FF)
-        // Set display off
-        0xAE,
-        // Set normal display
-        0xA6, // 1 = on, 0 = off per pixel
+        0xA0 | 0x1, // Rotate screen 180
+        // Vertical Mode - works better with the 'line based' paradigm
+        0x20, // Set memory mode command
+        1,    // Vertical
+        // COM SCAN DEC
+        0xC8,
+        // COM PINS
+        0xDA,
+        0x02, // Specific to 128x32 px
+        // Multiplex
+        0xA8,
+        32 - 1,
         // Set Oscillator Frequency
         0xD5, // Command
         0x80, // Recommended value (p64 of App Note)
-        // Enable charge pump regulator
-        0x8D, // Command
-        0x14, // Recommended value (p64 of App Note)
+        // Charge Pump
+        0x8D,
+        // pre-Charge
+        0xD9,
+        0xF1,
+        // Internal VCC
+        0x14,
+        // VCOM Detect
+        0xD8,
+        0x40,
+        // Display Contrast
+        0x81, // Command
+        128,  // Set between 1ish and 255ish
+        // Display resume
+        0xA4,
+        // Normal display
+        0xA6,
         // Display on
         0xAF};
 
-    /*
-    const uint8_t init_sequence[] = {
-        S_DISPLAYOFF,
-        S_SETDISPLAYCLOCKDIV,
-        DIV_RATIO,
-        S_SETMULTIPLEX,
-        MULTIPLEX,
-        S_SETDISPLAYOFFSET,
-        0, // no offset
-        S_SETSTARTLINE,
-        S_CHARGEPUMP,
-        INT_VCC,            // using internal VCC
-        S_MEMORYMODE,       //Since byte is vertical writing column by column
-        0,                  // set to horizontal mode
-        (S_SEGREMAP | 0x1), // rotate screen 180
-        S_COMSCANDEC,
-        S_SETCOMPINS,
-        0x02, // specifix to 32 px high
-        S_SETCONTRAST,
-        0xCF, //experiment.... 0xCf for 1306
-        S_SETPRECHARGE,
-        0xF1,
-        S_SETVCOMDETECT,
-        0x40,
-        S_DISPLAYALLON_RESUME,
-        S_NORMALDISPLAY,
-        S_DISPLAYON //switch on OLED
-    };
-    static const uint8_t numCommands = 25; //17;
-*/
+    static const uint8_t numCommands = 25;
 
-    const uint8_t init_sequence[] = {
-        S_DISPLAYOFF,
-        S_SETDISPLAYCLOCKDIV,
-        DIV_RATIO,
-        S_SETMULTIPLEX,
-        MULTIPLEX,
-        S_SETDISPLAYOFFSET,
-        0, // no offset
-        S_SETSTARTLINE,
-        S_CHARGEPUMP,
-        INT_VCC,            // using internal VCC
-        S_MEMORYMODE,       //Since byte is vertical writing column by column
-        0,                  // set to horizontal mode
-        (S_SEGREMAP | 0x1), // rotate screen 180
-        S_COMSCANDEC,
-        S_SETCOMPINS,
-        0x02, // specifix to 32 px high
-        S_SETCONTRAST,
-        0xCF, //experiment.... 0xCf for 1306
-        S_SETPRECHARGE,
-        0xF1,
-        S_SETVCOMDETECT,
-        0x40,
-        S_DISPLAYALLON_RESUME,
-        S_NORMALDISPLAY,
-        S_DISPLAYON //switch on OLED
-    };
-    static const uint8_t numCommands = 25; //17;
-
-    return sendCommands(dev, init_sequence, numCommands);
+    return sendCommands(dev, commands, numCommands);
 
     return STATUSok;
 }
@@ -412,36 +332,25 @@ int main(void)
 
     OLED_address(&dev, 0, 0);
 
-    uint8_t lineCommand[128 / 8 + 1];
-    uint8_t pattern[] = {0b010101010, 0b101010101};
+    uint8_t lineCommand[32 / 8 + 1];
+    uint8_t pattern[] = {0xFF, 0};
 
     bool lineOn = false;
 
-    // Send the data
-    //for (int repeat = 0; repeat < 1; repeat++)
     {
-        for (int row = 0; row < 32; row++)
+        for (int row = 0; row < 128; row++)
         {
             if (lineOn)
             {
-                memset(lineCommand, pattern[0], 128 / 8 + 1);
+                memset(lineCommand, pattern[0], 32 / 8 + 1);
             }
             else
             {
-                memset(lineCommand, pattern[1], 128 / 8 + 1);
+                memset(lineCommand, pattern[1], 32 / 8 + 1);
             }
             lineOn = !lineOn;
             lineCommand[0] = 0x40;
-            i2cSendBytes(I2C2, dev.address, lineCommand, 128 / 8 + 1);
-            /*
-            for (int i = 0; i < 128 / 8; i++)
-            {
-                uint8_t bytes[] = {
-                    0x40,
-                    0xFF * (i % 2)};
-                i2cSendBytes(I2C2, dev.address, bytes, 2);
-            }
-            */
+            i2cSendBytes(I2C2, dev.address, lineCommand, 32 / 8 + 1);
         }
     }
 
