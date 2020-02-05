@@ -3,6 +3,7 @@
 #include <libopencm3/stm32/usart.h>
 #include <libopencm3/stm32/timer.h>
 #include <libopencm3/stm32/f1/i2c.h>
+#include <libopencm3/stm32/dma.h>
 
 #include <libopencm3/cm3/nvic.h>
 
@@ -46,6 +47,55 @@ Status i2cSendBytes(uint32_t i2c, uint8_t addr, uint8_t data[], uint8_t numData)
 
     //send stop condition
     i2c_send_stop(i2c);
+    for (int i = 0; i < 200; i++)
+    {
+        __asm__("nop");
+    }
+
+    return STATUSok;
+}
+
+Status i2cSendBytesDMA(uint8_t addr, uint8_t data[], uint8_t numData)
+{
+
+    dma_disable_channel(DMA1, DMA_CHANNEL4);
+
+    dma_disable_transfer_complete_interrupt(DMA1, DMA_CHANNEL4);
+
+    dma_set_memory_address(DMA1, DMA_CHANNEL4, (uint32_t)data);
+
+    dma_set_number_of_data(DMA1, DMA_CHANNEL4, numData);
+
+    i2c_enable_dma(I2C2);
+
+    // Start the transaction
+    uint32_t reg32 __attribute__((unused));
+
+    //send start
+    i2c_send_start(I2C2);
+
+    //wait for the switch to master mode.
+    while (!((I2C_SR1(I2C2) & I2C_SR1_SB) &
+             (I2C_SR2(I2C2) & (I2C_SR2_MSL | I2C_SR2_BUSY))))
+        ;
+
+    //send address
+    i2c_send_7bit_address(I2C2, addr, I2C_WRITE);
+    //check for the ack
+    while (!(I2C_SR1(I2C2) & I2C_SR1_ADDR))
+        ;
+    //must read SR2 to clear it
+    reg32 = I2C_SR2(I2C2);
+
+    // Send the data
+
+    dma_enable_channel(DMA1, DMA_CHANNEL4);
+
+    while (!(I2C_SR1(I2C2) & I2C_SR1_BTF))
+        ; //wait for byte transferred flag
+
+    // Finish the transaction
+    i2c_send_stop(I2C2);
     for (int i = 0; i < 200; i++)
     {
         __asm__("nop");
@@ -174,6 +224,7 @@ void clock_setup(void)
     rcc_periph_clock_enable(RCC_GPIOB);
     //I2C
     rcc_periph_clock_enable(RCC_I2C2);
+    rcc_periph_clock_enable(RCC_DMA1);
 }
 
 void usart_setup(void)
@@ -274,6 +325,34 @@ void i2c_setup(void)
 
     //enable it
     i2c_peripheral_enable(I2C2);
+
+    // Setup DMA with the i2c
+    //  @100 kHz, one byte takes 0.08 ms. => 1 pixel takes 0.01 ms
+    //  Hence the whole 128x32 screen takes a minimum of 4096*0.01 ms
+    //      = 40.96 ms.
+    // Ignoring a couple of things, this makes a full update rate of
+    //  just 24 Hz
+    //
+    // If using a line-by line paradigm, with a 32 pixel line, each line
+    //  takes 0.32 ms to transfer. This is ONLY an update rate of 3125 Hz
+    //      => the line by line paradigm probably works pretty damn easy
+    //
+    // i2c is slow...
+
+    // Use DMA to transfer
+    // I2C2 is DMA1 Channel 4 (TX)
+    // Setup DMA
+    dma_channel_reset(DMA1, DMA_CHANNEL4);
+
+    dma_set_peripheral_address(DMA1, DMA_CHANNEL4, (uint32_t)&I2C2_DR);
+    dma_enable_memory_increment_mode(DMA1, DMA_CHANNEL4);
+    dma_set_peripheral_size(DMA1, DMA_CHANNEL4, DMA_CCR_PSIZE_8BIT);
+    dma_set_memory_size(DMA1, DMA_CHANNEL4, DMA_CCR_MSIZE_8BIT);
+    dma_set_read_from_memory(DMA1, DMA_CHANNEL4);
+
+    nvic_enable_irq(NVIC_DMA1_CHANNEL4_IRQ);
+
+    dma_disable_channel(DMA1, DMA_CHANNEL4);
 }
 
 /////////////////////////////////////////////////////
@@ -335,12 +414,12 @@ int main(void)
     uint8_t lineCommand[32 / 8 + 1];
     uint8_t pattern[] = {0xFF, 0};
 
-    bool lineOn = false;
+    uint8_t lineOn = false;
 
     {
         for (int row = 0; row < 128; row++)
         {
-            if (lineOn)
+            if (lineOn == 0)
             {
                 memset(lineCommand, pattern[0], 32 / 8 + 1);
             }
@@ -348,9 +427,14 @@ int main(void)
             {
                 memset(lineCommand, pattern[1], 32 / 8 + 1);
             }
-            lineOn = !lineOn;
+            lineOn++;
+            if (lineOn >= 4)
+            {
+                lineOn = 0;
+            }
             lineCommand[0] = 0x40;
-            i2cSendBytes(I2C2, dev.address, lineCommand, 32 / 8 + 1);
+            //i2cSendBytes(I2C2, dev.address, lineCommand, 32 / 8 + 1);
+            i2cSendBytesDMA(dev.address, lineCommand, 32 / 8 + 1);
         }
     }
 
