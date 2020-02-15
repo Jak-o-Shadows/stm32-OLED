@@ -375,9 +375,6 @@ void i2c_setup(void)
     dma_set_memory_size(DMA1, DMA_CHANNEL4, DMA_CCR_MSIZE_8BIT);
     dma_set_read_from_memory(DMA1, DMA_CHANNEL4);
 
-    // Enable TCIF
-    dma_enable_transfer_complete_interrupt(DMA1, DMA_CHANNEL4);
-
     dma_disable_channel(DMA1, DMA_CHANNEL4);
 }
 
