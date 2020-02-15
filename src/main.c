@@ -300,6 +300,60 @@ Status pixelClear(Segment_t *buffer, uint8_t segmentStart_x, uint8_t segmentStar
     }
 }
 
+Status text(Segment_t *buffer, uint8_t segmentStart_x, uint8_t segmentStart_y, uint8_t segmentSize_x, uint8_t segmentSize_y, uint8_t topLeft_x, uint8_t topLeft_y, char character)
+{
+    // Draw a text character if it is appplicable to the segment at all
+    // First check if any of the character is useful
+
+    const uint8_t charWidth = 10;
+    const uint8_t charHeight = 10;
+
+    // First check if the character is within the segment
+
+    uint8_t bottomRight_x = topLeft_x + charWidth;
+    uint8_t bottomRight_y = topLeft_y + charHeight;
+    bool draw = false;
+    if ((topLeft_x >= segmentStart_x) && (topLeft_y >= segmentStart_y))
+    {
+        draw = true;
+        // It MAY be contained.
+        if ((bottomRight_x >= (segmentStart_x + segmentSize_x)) && (bottomRight_y <= (segmentStart_y + segmentSize_y)))
+        {
+            // Continue
+            draw = true;
+        }
+    }
+    draw = true;
+
+    if (!draw)
+    {
+        return STATUSbad;
+    }
+
+    // The character is within the segment - hence iterate over its pixels and draw it
+
+    // The character is a list of pixels that are set.
+    uint8_t const numPixels = 53;
+    uint8_t pixels[] = {
+        1, 11, 21, 31, 41, 51, 61, 71, 81, 91, 2, 12, 22, 32, 42, 52, 62, 72, 82, 92, 7, 17, 27, 37, 47, 57, 67, 77, 87, 97, 8, 18, 28, 38, 48, 58, 68, 78, 88, 98, 13, 14, 24, 34, 44, 45, 54, 55, 65, 75, 85, 86, 96};
+    //uint8_t const numPixels = 4;
+    //uint8_t pixels[] = {0, 2, 4, 7};
+
+    // Clear a pixel in the segment, if applicable
+    uint8_t byteIdx;
+    uint8_t bitIdx;
+    for (int pxNum = 0; pxNum < numPixels; pxNum++)
+    {
+        uint8_t x = topLeft_x + pixels[pxNum] - charWidth * (pixels[pxNum] / charWidth); // Remember, integer division floors
+        uint8_t y = topLeft_y + pixels[pxNum] / charWidth;
+        Status sts = lookupPixelLocation(&byteIdx, &bitIdx, segmentStart_x, segmentStart_y, segmentSize_x, segmentSize_y, x, y);
+        if (sts == STATUSok)
+        {
+            ClearBit(bitIdx, buffer->components.pixelBuffer[byteIdx]);
+        }
+    }
+}
+
 void clock_setup(void)
 {
     rcc_clock_setup_in_hse_8mhz_out_72mhz();
@@ -636,10 +690,15 @@ void dma1_channel4_isr(void)
     Segment_t *nextBuffer = buffers[segmentIdx];
     memset(nextBuffer->components.pixelBuffer, 0xFF, segmentPixelCount / 8);
 
-    for (uint8_t col = 10; col < 30; col++)
+    // Draw a line across X near the bottom
+    for (uint8_t row = 0; row < HEIGHT; row++)
     {
-        pixelClear(nextBuffer, 0, segment, 32, 1, 6, col);
+        pixelClear(nextBuffer, 0, segment, 32, 1, WIDTH - 4, row);
     }
+
+    // Draw some characters
+    text(nextBuffer, 0, segment, 32, 1, 0, 1, 'N');
+
     // Artificial delay for development
     for (int i = 0; i < 100000; i++)
     {
