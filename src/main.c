@@ -60,13 +60,9 @@ Status i2cSendBytesDMA(uint8_t addr, uint8_t data[], uint8_t numData)
 
     dma_disable_channel(DMA1, DMA_CHANNEL4);
 
-    dma_disable_transfer_complete_interrupt(DMA1, DMA_CHANNEL4);
-
     dma_set_memory_address(DMA1, DMA_CHANNEL4, (uint32_t)data);
 
     dma_set_number_of_data(DMA1, DMA_CHANNEL4, numData);
-
-    i2c_enable_dma(I2C2);
 
     // Start the transaction
     uint32_t reg32 __attribute__((unused));
@@ -88,6 +84,7 @@ Status i2cSendBytesDMA(uint8_t addr, uint8_t data[], uint8_t numData)
     reg32 = I2C_SR2(I2C2);
 
     // Send the data
+    i2c_enable_dma(I2C2);
 
     dma_enable_channel(DMA1, DMA_CHANNEL4);
 
@@ -100,6 +97,10 @@ Status i2cSendBytesDMA(uint8_t addr, uint8_t data[], uint8_t numData)
     {
         __asm__("nop");
     }
+
+    // Disable DMA
+    i2c_disable_dma(I2C2);
+    //dma_disable_channel(DMA1, DMA_CHANNEL4);
 
     return STATUSok;
 }
@@ -126,6 +127,28 @@ typedef struct SSD1306_s
     uint8_t address;
     mode_t mode;
 } SSD1306;
+
+#define WIDTH 32
+#define HEIGHT 128
+#define segmentPixelCount WIDTH
+#define segmentCommandSize segmentPixelCount / 8 + 1
+typedef union Segment_u {
+    uint8_t bytes[segmentCommandSize];
+    struct components_s
+    {
+        uint8_t dataCommand;
+        uint8_t pixelBuffer[segmentPixelCount / 8];
+    } components;
+} Segment_t;
+
+// Working variables
+static SSD1306 dev;
+static uint8_t segment;
+static uint8_t segmentIdx;
+static Segment_t buffer1;
+static Segment_t buffer2;
+static Segment_t *buffers[] = {&buffer1, &buffer2};
+static const uint8_t bufferCount = 2;
 
 // Start functions
 
@@ -249,9 +272,11 @@ void usart_setup(void)
 
 static void nvic_setup(void)
 {
-    /* Without this the RTC interrupt routine will never be called. */
-    nvic_enable_irq(NVIC_USART2_IRQ);
-    nvic_set_priority(NVIC_USART2_IRQ, 2);
+    //nvic_set_priority(NVIC_USART2_IRQ, 2);
+    //nvic_enable_irq(NVIC_USART2_IRQ);
+
+    nvic_set_priority(NVIC_DMA1_CHANNEL4_IRQ, 0);
+    nvic_enable_irq(NVIC_DMA1_CHANNEL4_IRQ);
 }
 
 static void gpio_setup(void)
@@ -350,7 +375,8 @@ void i2c_setup(void)
     dma_set_memory_size(DMA1, DMA_CHANNEL4, DMA_CCR_MSIZE_8BIT);
     dma_set_read_from_memory(DMA1, DMA_CHANNEL4);
 
-    nvic_enable_irq(NVIC_DMA1_CHANNEL4_IRQ);
+    // Enable TCIF
+    dma_enable_transfer_complete_interrupt(DMA1, DMA_CHANNEL4);
 
     dma_disable_channel(DMA1, DMA_CHANNEL4);
 }
@@ -384,10 +410,19 @@ int main(void)
 
     uint32_t i2c = I2C2; //i2c2
 
-    SSD1306 dev;
+    // Initialise device properties
     dev.address = 0b0111100;
     dev.mode = DEAD;
     dev.state = PAGE;
+
+    // Initialise segment buffers
+    buffer1.components.dataCommand = 0x40;
+    buffer2.components.dataCommand = 0x40;
+    memset(buffer1.components.pixelBuffer, 0xFF, segmentPixelCount / 8);
+    memset(buffer2.components.pixelBuffer, 0, segmentPixelCount / 8);
+    // Initialise double buffer & tracking variables
+    segment = 0;
+    segmentIdx = 0;
 
     init(&dev);
 
@@ -409,34 +444,12 @@ int main(void)
         i2cSendBytes(I2C2, dev.address, bytes, 2);
     }
 
-    OLED_address(&dev, 0, 0);
+    // kick it all off
+    dma_enable_transfer_complete_interrupt(DMA1, DMA_CHANNEL4);
+    uint8_t bytes[] = {0xFF};
+    i2cSendBytesDMA(dev.address, bytes, 1);
 
-    uint8_t lineCommand[32 / 8 + 1];
-    uint8_t pattern[] = {0xFF, 0};
-
-    uint8_t lineOn = false;
-
-    {
-        for (int row = 0; row < 128; row++)
-        {
-            if (lineOn == 0)
-            {
-                memset(lineCommand, pattern[0], 32 / 8 + 1);
-            }
-            else
-            {
-                memset(lineCommand, pattern[1], 32 / 8 + 1);
-            }
-            lineOn++;
-            if (lineOn >= 4)
-            {
-                lineOn = 0;
-            }
-            lineCommand[0] = 0x40;
-            //i2cSendBytes(I2C2, dev.address, lineCommand, 32 / 8 + 1);
-            i2cSendBytesDMA(dev.address, lineCommand, 32 / 8 + 1);
-        }
-    }
+    //dma1_channel4_isr();
 
     bool inverted = false;
     uint8_t commandsInvert[1];
@@ -512,5 +525,54 @@ void tim2_isr(void)
         // Setup next compare time
         uint16_t compare_time = timer_get_counter(TIM2);
         timer_set_oc_value(TIM2, TIM_OC1, 10 + compare_time);
+    }
+}
+
+void dma1_channel4_isr(void)
+{
+    // I2C Transmit DMA channel
+
+    // First clear flag
+    if (dma_get_interrupt_flag(DMA1, DMA_CHANNEL4, DMA_TCIF))
+    {
+        dma_clear_interrupt_flags(DMA1, DMA_CHANNEL4, DMA_TCIF);
+    }
+
+    if (segment == 0)
+    {
+        OLED_address(&dev, 0, 0);
+    }
+    segment++;
+    if (segment > (WIDTH * HEIGHT) / segmentPixelCount)
+    {
+        segment = 0;
+        // Disable TCIF interrupt flag
+        dma_disable_transfer_complete_interrupt(DMA1, DMA_CHANNEL4);
+    }
+    else
+    {
+        // Must re-enable TCIF interrupt
+        dma_enable_transfer_complete_interrupt(DMA1, DMA_CHANNEL4);
+    }
+
+    // Then swap buffer
+    Segment_t activeBuffer = *buffers[segmentIdx];
+    segmentIdx++;
+    if (segmentIdx >= bufferCount)
+    {
+        segmentIdx = 0;
+    }
+
+    // Then send
+    i2cSendBytesDMA(dev.address, activeBuffer.bytes, segmentCommandSize);
+
+    // Then process next buffer
+    Segment_t *nextBuffer = buffers[segmentIdx];
+    memset(nextBuffer->components.pixelBuffer, segmentIdx, segmentPixelCount / 8);
+
+    // Artificial delay for development
+    for (int i = 0; i < 100000; i++)
+    {
+        __asm__("nop");
     }
 }
