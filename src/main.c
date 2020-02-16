@@ -346,7 +346,7 @@ Status text(Segment_t *buffer, uint8_t segmentStart_x, uint8_t segmentStart_y, u
     {
         uint8_t x = topLeft_x + pixels[pxNum] - charWidth * (pixels[pxNum] / charWidth); // Remember, integer division floors
         uint8_t y = topLeft_y + pixels[pxNum] / charWidth;
-        Status sts = lookupPixelLocation(&byteIdx, &bitIdx, segmentStart_x, segmentStart_y, segmentSize_x, segmentSize_y, x, y);
+        Status sts = lookupPixelLocation(&byteIdx, &bitIdx, segmentStart_x, segmentStart_y, segmentSize_x, segmentSize_y, y, x);
         if (sts == STATUSok)
         {
             ClearBit(bitIdx, buffer->components.pixelBuffer[byteIdx]);
@@ -699,6 +699,10 @@ void dma1_channel4_isr(void)
     // Draw some characters
     text(nextBuffer, 0, segment, 32, 1, 0, 1, 'N');
 
+    text(nextBuffer, 0, segment, 32, 1, 12, 1, 'N');
+    text(nextBuffer, 0, segment, 32, 1, 0, 30, 'N');
+    //text(nextBuffer, 0, segment, 32, 1, 0, 60, 'N');
+    text(nextBuffer, 0, segment, 32, 1, 0, 1, 'N');
     // Artificial delay for development
     for (int i = 0; i < 100000; i++)
     {
