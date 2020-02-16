@@ -10,6 +10,8 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "fonts.h"
+
 // Older Bits
 
 // Define Functions
@@ -305,11 +307,9 @@ Status text(Segment_t *buffer, uint8_t segmentStart_x, uint8_t segmentStart_y, u
     // Draw a text character if it is appplicable to the segment at all
     // First check if any of the character is useful
 
-    const uint8_t charWidth = 10;
-    const uint8_t charHeight = 10;
-
     // First check if the character is within the segment
 
+    /*
     uint8_t bottomRight_x = topLeft_x + charWidth;
     uint8_t bottomRight_y = topLeft_y + charHeight;
     bool draw = false;
@@ -329,15 +329,14 @@ Status text(Segment_t *buffer, uint8_t segmentStart_x, uint8_t segmentStart_y, u
     {
         return STATUSbad;
     }
+    */
 
     // The character is within the segment - hence iterate over its pixels and draw it
+    uint8_t charWidth = fontWidthGet(character);
+    uint8_t charHeight = fontHeightGet(character);
 
-    // The character is a list of pixels that are set.
-    uint8_t const numPixels = 53;
-    uint8_t pixels[] = {
-        1, 11, 21, 31, 41, 51, 61, 71, 81, 91, 2, 12, 22, 32, 42, 52, 62, 72, 82, 92, 7, 17, 27, 37, 47, 57, 67, 77, 87, 97, 8, 18, 28, 38, 48, 58, 68, 78, 88, 98, 13, 14, 24, 34, 44, 45, 54, 55, 65, 75, 85, 86, 96};
-    //uint8_t const numPixels = 4;
-    //uint8_t pixels[] = {0, 2, 4, 7};
+    uint8_t numPixels = fontNumberPixelsGet(character);
+    uint8_t *pixels = fontGet(character);
 
     // Clear a pixel in the segment, if applicable
     uint8_t byteIdx;
@@ -697,12 +696,20 @@ void dma1_channel4_isr(void)
     }
 
     // Draw some characters
-    text(nextBuffer, 0, segment, 32, 1, 0, 1, 'N');
+    text(nextBuffer, 0, segment, 32, 1, 1, 1, 'J');
+    text(nextBuffer, 0, segment, 32, 1, 8, 1, 'a');
+    text(nextBuffer, 0, segment, 32, 1, 16, 1, 'k');
+    text(nextBuffer, 0, segment, 32, 1, 24, 1, '_');
+    text(nextBuffer, 0, segment, 32, 1, 32, 1, 'O');
+    text(nextBuffer, 0, segment, 32, 1, 40, 1, '_');
+    text(nextBuffer, 0, segment, 32, 1, 48, 1, 'S');
+    text(nextBuffer, 0, segment, 32, 1, 56, 1, 'h');
+    text(nextBuffer, 0, segment, 32, 1, 64, 1, 'a');
+    text(nextBuffer, 0, segment, 32, 1, 72, 1, 'd');
+    text(nextBuffer, 0, segment, 32, 1, 80, 1, 'o');
+    text(nextBuffer, 0, segment, 32, 1, 88, 1, 'w');
+    text(nextBuffer, 0, segment, 32, 1, 96, 1, 's');
 
-    text(nextBuffer, 0, segment, 32, 1, 12, 1, 'N');
-    text(nextBuffer, 0, segment, 32, 1, 0, 30, 'N');
-    //text(nextBuffer, 0, segment, 32, 1, 0, 60, 'N');
-    text(nextBuffer, 0, segment, 32, 1, 0, 1, 'N');
     // Artificial delay for development
     for (int i = 0; i < 100000; i++)
     {
