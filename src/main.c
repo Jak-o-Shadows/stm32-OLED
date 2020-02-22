@@ -160,6 +160,11 @@ static Segment_t buffer2;
 static Segment_t *buffers[] = {&buffer1, &buffer2};
 static const uint8_t bufferCount = 2;
 
+// TEMP - drawing function
+static uint8_t rotateX = 0;
+static const uint16_t msRotate = 80;
+static uint16_t msRotateCounter = 0;
+
 // Start functions
 
 Status sendCommands(SSD1306 *dev, uint8_t commands[], uint8_t numCommands)
@@ -415,6 +420,9 @@ static void nvic_setup(void)
 
     nvic_set_priority(NVIC_DMA1_CHANNEL4_IRQ, 0);
     nvic_enable_irq(NVIC_DMA1_CHANNEL4_IRQ);
+
+    nvic_set_priority(NVIC_TIM2_IRQ, 2);
+    nvic_enable_irq(NVIC_TIM2_IRQ);
 }
 
 static void gpio_setup(void)
@@ -436,8 +444,6 @@ static void timer_setup(void)
 {
 
     rcc_periph_clock_enable(RCC_TIM2);
-
-    nvic_enable_irq(NVIC_TIM2_IRQ);
 
     rcc_periph_reset_pulse(RST_TIM2);
 
@@ -660,6 +666,23 @@ void tim2_isr(void)
         // Setup next compare time
         uint16_t compare_time = timer_get_counter(TIM2);
         timer_set_oc_value(TIM2, TIM_OC1, 10 + compare_time);
+
+        // Do the work
+        msRotateCounter++;
+        if (msRotateCounter > msRotate)
+        {
+            msRotateCounter = 0;
+
+            // Do the update
+            rotateX = rotateX - 5;
+            // Kick off update
+            dma_enable_transfer_complete_interrupt(DMA1, DMA_CHANNEL4);
+            uint8_t bytes[] = {0xFF};
+            i2cSendBytesDMA(dev.address, bytes, 1);
+
+            // Debug toggle LED
+            gpio_toggle(GPIOC, GPIO13);
+        }
     }
 }
 
