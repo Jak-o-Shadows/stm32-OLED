@@ -58,7 +58,7 @@ uint16_t const fontLocation[] = {%s};
 
 def makeNumPixelsList(lengths):
     template = """
-uint8_t const fontLength[] = {%s};
+uint16_t const fontLength[] = {%s};
 """
     joiner = ", "
     return template % (joiner.join([str(x) for x in lengths]).rstrip(joiner))
@@ -66,7 +66,7 @@ uint8_t const fontLength[] = {%s};
 
 def makeDataList(onValues):
     template = """
-uint8_t const fontValues[] = {%s};
+uint16_t const fontValues[] = {%s};
 """
     flatOnValues = [
         pixelNumber for sublist in onValues for pixelNumber in sublist]
@@ -77,7 +77,7 @@ uint8_t const fontValues[] = {%s};
 
 def makeHeightList(heights):
     template = """
-uint8_t const fontHeight[] = {%s};
+uint16_t const fontHeight[] = {%s};
 """
     joiner = ", "
     return template % (joiner.join([str(x) for x in heights]).rstrip(joiner))
@@ -85,7 +85,7 @@ uint8_t const fontHeight[] = {%s};
 
 def makeWidthList(widths):
     template = """
-uint8_t const fontWidth[] = {%s};
+uint16_t const fontWidth[] = {%s};
 """
     joiner = ", "
     return template % (joiner.join([str(x) for x in widths]).rstrip(joiner))
@@ -99,17 +99,17 @@ int fontOffsetLookup(){
 """ % (-start)
 
     lookupFunctions = """
-uint8_t fontHeightGet(char ch){
+uint16_t fontHeightGet(char ch){
     return fontHeight[((uint8_t) ch) + fontOffsetLookup()];
 }
-uint8_t fontWidthGet(char ch){
+uint16_t fontWidthGet(char ch){
     return fontWidth[((uint8_t) ch) + fontOffsetLookup()];
 }
-uint8_t fontNumberPixelsGet(char ch){
+uint16_t fontNumberPixelsGet(char ch){
     return fontLength[((uint8_t) ch) + fontOffsetLookup()];
 }
 
-uint8_t* fontGet(char ch){
+uint16_t* fontGet(char ch){
     return (uint8_t*) &( fontValues[fontLocation[((uint8_t) ch) + fontOffsetLookup()]] );
 }
 
@@ -124,7 +124,7 @@ if __name__ == "__main__":
     start = 65
     end = 122
 
-    font = ImageFont.truetype("comic.ttf", size=10)
+    font = ImageFont.truetype("comic.ttf", size=25)
 
     onValues = []
     widths = []

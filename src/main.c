@@ -332,11 +332,11 @@ Status text(Segment_t *buffer, uint8_t segmentStart_x, uint8_t segmentStart_y, u
     */
 
     // The character is within the segment - hence iterate over its pixels and draw it
-    uint8_t charWidth = fontWidthGet(character);
-    uint8_t charHeight = fontHeightGet(character);
+    uint16_t charWidth = fontWidthGet(character);
+    uint16_t charHeight = fontHeightGet(character);
 
-    uint8_t numPixels = fontNumberPixelsGet(character);
-    uint8_t *pixels = fontGet(character);
+    uint16_t numPixels = fontNumberPixelsGet(character);
+    uint16_t *pixels = fontGet(character);
 
     // Clear a pixel in the segment, if applicable
     uint8_t byteIdx;
