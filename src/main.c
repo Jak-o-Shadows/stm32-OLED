@@ -353,6 +353,22 @@ Status text(Segment_t *buffer, uint8_t segmentStart_x, uint8_t segmentStart_y, u
     }
 }
 
+Status words(Segment_t *buffer, uint8_t segmentStart_x, uint8_t segmentStart_y, uint8_t segmentSize_x, uint8_t segmentSize_y, uint8_t topLeft_x, uint8_t topLeft_y, char word[], uint8_t wordLength)
+{
+    // Write a word into the segment
+
+    uint8_t x = topLeft_x;
+    uint8_t y = topLeft_y;
+
+    uint8_t spaceWidth = 3;
+
+    for (int charIdx = 0; charIdx < wordLength; charIdx++)
+    {
+        text(buffer, segmentStart_x, segmentStart_y, segmentSize_x, segmentSize_y, x, y, word[charIdx]);
+        x = x + spaceWidth + fontWidthGet(word[charIdx]);
+    }
+}
+
 void clock_setup(void)
 {
     rcc_clock_setup_in_hse_8mhz_out_72mhz();
@@ -662,7 +678,7 @@ void dma1_channel4_isr(void)
         OLED_address(&dev, 0, 0);
     }
     segment++;
-    if (segment > (WIDTH * HEIGHT) / segmentPixelCount)
+    if (segment > ((WIDTH * HEIGHT) / segmentPixelCount))
     {
         segment = 0;
         // Disable TCIF interrupt flag
@@ -696,23 +712,8 @@ void dma1_channel4_isr(void)
     }
 
     // Draw some characters
-    text(nextBuffer, 0, segment, 32, 1, 1, 1, 'J');
-    text(nextBuffer, 0, segment, 32, 1, 8, 1, 'a');
-    text(nextBuffer, 0, segment, 32, 1, 16, 1, 'k');
-    text(nextBuffer, 0, segment, 32, 1, 24, 1, '_');
-    text(nextBuffer, 0, segment, 32, 1, 32, 1, 'O');
-    text(nextBuffer, 0, segment, 32, 1, 40, 1, '_');
-    text(nextBuffer, 0, segment, 32, 1, 48, 1, 'S');
-    text(nextBuffer, 0, segment, 32, 1, 56, 1, 'h');
-    text(nextBuffer, 0, segment, 32, 1, 64, 1, 'a');
-    text(nextBuffer, 0, segment, 32, 1, 72, 1, 'd');
-    text(nextBuffer, 0, segment, 32, 1, 80, 1, 'o');
-    text(nextBuffer, 0, segment, 32, 1, 88, 1, 'w');
-    text(nextBuffer, 0, segment, 32, 1, 96, 1, 's');
-
-    // Artificial delay for development
-    for (int i = 0; i < 100000; i++)
-    {
-        __asm__("nop");
-    }
+    char word[] = "Jak_o_Shadows";
+    uint8_t wordLength = 13;
+    uint8_t start = rotateX + HEIGHT / 2; // Works because overflow
+    words(nextBuffer, 0, segment, 32, 1, start, 1, word, wordLength);
 }
