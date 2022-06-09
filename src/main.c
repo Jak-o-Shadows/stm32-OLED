@@ -98,8 +98,14 @@ Status i2cSendBytesDMA(uint8_t addr, uint8_t data[], uint8_t numData)
 
     dma_enable_channel(DMA1, DMA_CHANNEL4);
 
-    while (!(I2C_SR1(I2C2) & I2C_SR1_BTF))
-        ; //wait for byte transferred flag
+    uint16_t maxCheck = 65000;
+    while (maxCheck--)
+    {
+        if ((I2C_SR1(I2C2) & I2C_SR1_BTF))
+        {
+            break;
+        }
+    }
 
     // Finish the transaction
     i2c_send_stop(I2C2);
@@ -162,7 +168,7 @@ static const uint8_t bufferCount = 2;
 
 // TEMP - drawing function
 static uint8_t rotateX = 0;
-static const uint16_t msRotate = 80;
+static const uint16_t msRotate = 65000;
 static uint16_t msRotateCounter = 0;
 
 // Start functions
@@ -236,6 +242,59 @@ Status init(SSD1306 *dev)
     return sendCommands(dev, commands, numCommands);
 
     return STATUSok;
+}
+
+void OLED_address(SSD1306 *dev, uint8_t x, uint8_t y)
+{
+    uint8_t commands[] = {
+        // Set column addressing
+        0x21,
+        0x00,
+        128 - 1,
+        // Set page addressing extents
+        0x22,
+        0x00,
+        32 / 8 - 1};
+    sendCommands(dev, commands, 6);
+}
+
+// Scrolling
+Status setupScroll(SSD1306 *dev, bool scrollRight)
+{
+    uint8_t scrollDir;
+    if (scrollRight)
+    {
+        scrollDir = 0x26;
+    }
+    else
+    {
+        scrollDir = 0x27;
+    }
+
+    uint8_t commands[] = {
+        scrollDir, // Command - scroll left or right
+        0x00,      // Dummy Byte
+        0,         // Start page address
+        0,         // Scroll update rate - non-linear mapping in terms of frames form data sheet
+        0x0F,      // End page address
+        0,         // Dummy Byte
+        0xFF       // Dummy Byte
+    };
+    return sendCommands(dev, commands, 7);
+}
+
+Status scrollState(SSD1306 *dev, bool enabled)
+{
+    uint8_t bytes;
+    if (enabled)
+    {
+        bytes = 0x2F;
+    }
+    else
+    {
+        bytes = 0x2E;
+    }
+    return sendCommands(dev, &bytes, 1);
 }
 
 // Graphics Drawing Functions
@@ -526,20 +585,6 @@ void i2c_setup(void)
 ////////////// Main Loop   //////////////////////////
 /////////////////////////////////////////////////////
 
-void OLED_address(SSD1306 *dev, uint8_t x, uint8_t y)
-{
-    uint8_t commands[] = {
-        // Set column addressing
-        0x21,
-        0x00,
-        128 - 1,
-        // Set page addressing extents
-        0x22,
-        0x00,
-        32 / 8 - 1};
-    sendCommands(dev, commands, 6);
-}
-
 int main(void)
 {
     clock_setup();
@@ -590,7 +635,17 @@ int main(void)
     uint8_t bytes[] = {0xFF};
     i2cSendBytesDMA(dev.address, bytes, 1);
 
+    gpio_toggle(GPIOC, GPIO13);
+
     //dma1_channel4_isr();
+    for (int i = 0; i < 50000; i++)
+    {
+        __asm__("nop");
+        gpio_toggle(GPIOC, GPIO13);
+    }
+
+    setupScroll(&dev, false);
+    scrollState(&dev, true);
 
     bool inverted = false;
     uint8_t commandsInvert[1];
