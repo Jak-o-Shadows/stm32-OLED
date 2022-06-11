@@ -246,10 +246,14 @@ int main(void)
     dev.i2c = I2C2;
 
     // Initialise segment buffers
-    buffer1.components.dataCommand = 0x40;
-    buffer2.components.dataCommand = 0x40;
-    memset(buffer1.components.pixelBuffer, 0xFF, segmentPixelCount / 8);
-    memset(buffer2.components.pixelBuffer, 0, segmentPixelCount / 8);
+    buffer1.size_x = 32;
+    buffer1.size_y = 1;
+    buffer2.size_x = 32;
+    buffer2.size_y = 1;
+    buffer1.data.components.dataCommand = 0x40;
+    buffer2.data.components.dataCommand = 0x40;
+    memset(buffer1.data.components.pixelBuffer, 0xFF, segmentPixelCount / 8);
+    memset(buffer2.data.components.pixelBuffer, 0, segmentPixelCount / 8);
     // Initialise double buffer & tracking variables
     segment = 0;
     segmentIdx = 0;
@@ -425,21 +429,21 @@ void dma1_channel4_isr(void)
     }
 
     // Then send
-    i2cSendBytesDMA(dev.address, activeBuffer.bytes, segmentCommandSize);
+    i2cSendBytesDMA(dev.address, activeBuffer.data.bytes, segmentCommandSize);
 
-    // Then process next buffer
+    // Then prepare next buffer to send
     Segment_t *nextBuffer = buffers[segmentIdx];
-    memset(nextBuffer->components.pixelBuffer, 0xFF, segmentPixelCount / 8);
+    memset(nextBuffer->data.components.pixelBuffer, 0xFF, segmentPixelCount / 8);
 
     // Draw a line across X near the bottom
     for (uint8_t row = 0; row < HEIGHT; row++)
     {
-        pixelClear(nextBuffer, 0, segment, 32, 1, WIDTH - 4, row);
+        pixelClear(nextBuffer, 0, segment, WIDTH - 4, row);
     }
 
     // Draw some characters
     char word[] = "Jak_o_Shadows";
     uint8_t wordLength = 13;
     uint8_t start = rotateX + HEIGHT / 2; // Works because overflow
-    words(nextBuffer, 0, segment, 32, 1, start, 1, word, wordLength);
+    words(nextBuffer, 0, segment, start, 1, word, wordLength);
 }
