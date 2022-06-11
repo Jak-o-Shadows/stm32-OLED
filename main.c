@@ -10,21 +10,12 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "macros.h"
+#include "status.hpp"
 #include "protocol/drawing/fonts.h"
 
 // Older Bits
 
-// Define Functions
-#define IsHigh(BIT, PORT) ((PORT & (1 << BIT)) != 0)
-#define IsLow(BIT, PORT) ((PORT & (1 << BIT)) == 0)
-#define SetBit(BIT, PORT) PORT |= (1 << BIT)
-#define ClearBit(BIT, PORT) PORT &= ~(1 << BIT)
-
-typedef enum Status_e
-{
-    STATUSok = 0,
-    STATUSbad = 1
-} Status;
 
 // Generic i2c
 Status i2cSendBytes(uint32_t i2c, uint8_t addr, uint8_t data[], uint8_t numData)
@@ -168,7 +159,7 @@ static const uint8_t bufferCount = 2;
 
 // TEMP - drawing function
 static uint8_t rotateX = 0;
-static const uint16_t msRotate = 65000;
+static const uint16_t msRotate = 1000;
 static uint16_t msRotateCounter = 0;
 
 // Start functions
@@ -589,17 +580,16 @@ int main(void)
 {
     clock_setup();
     gpio_setup();
-    timer_setup();
     usart_setup();
     i2c_setup();
-    nvic_setup();
+
 
     uint32_t i2c = I2C2; //i2c2
 
     // Initialise device properties
     dev.address = 0b0111100;
-    dev.mode = DEAD;
-    dev.state = PAGE;
+    dev.mode = PAGE;
+    dev.state = DEAD;
 
     // Initialise segment buffers
     buffer1.components.dataCommand = 0x40;
@@ -644,8 +634,12 @@ int main(void)
         gpio_toggle(GPIOC, GPIO13);
     }
 
+    timer_setup();
+    nvic_setup();
+
+
     setupScroll(&dev, false);
-    scrollState(&dev, true);
+    scrollState(&dev, false);
 
     bool inverted = false;
     uint8_t commandsInvert[1];
