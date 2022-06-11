@@ -159,7 +159,7 @@ static const uint8_t bufferCount = 2;
 
 // TEMP - drawing function
 static uint8_t rotateX = 0;
-static const uint16_t msRotate = 1000;
+static const uint16_t msRotate = 20;
 static uint16_t msRotateCounter = 0;
 
 // Start functions

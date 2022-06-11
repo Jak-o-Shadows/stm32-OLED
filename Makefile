@@ -33,6 +33,7 @@ LDFLAGS		+= -L$(LIB_DIR)
 LDFLAGS		+= -T$(LDSCRIPT)
 LDFLAGS		+= -Wl,-Map=$(*).map
 LDFLAGS		+= -Wl,--gc-sections
+LDFLAGS     += --specs=nosys.specs
 
 LIBNAME = opencm3_stm32f1
 #LIBNAME = opencm3_stm32f4
@@ -42,7 +43,7 @@ LIBNAME = opencm3_stm32f1
 
 #what is the main file 
 BINARY = main
-OBJS += $(HL_LIBS_C:.c=.o) $(HL_LIBS_CPP:.cpp=.opp)
+OBJS += $(HL_LIBS_C:.c=.o) $(HL_LIBS_CPP:.cpp=.o)
 
 
 
@@ -51,8 +52,8 @@ toolchainPath ?=
 PREFIX		?= $(toolchainPath)arm-none-eabi
 
 CC		:= $(PREFIX)-gcc
-LD		:= $(PREFIX)-gcc
-CCX		:= $(PREFIX)-g++
+LD		:= $(PREFIX)-g++
+CXX		:= $(PREFIX)-g++
 AR		:= $(PREFIX)-ar
 AS		:= $(PREFIX)-as
 OBJCOPY		:= $(PREFIX)-objcopy
@@ -82,7 +83,7 @@ CPPFLAGS =
 CPPFLAGS += -fno-common -ffunction-sections -fdata-sections
 CPPFLAGS += -MD
 CPPFLAGS += -Wall -Wundef
-CPPFLAGS += -mcpu=cortex-m3 -mthumb
+CPPFLAGS += -mcpu=cortex-m3
 CPPFLAGS += -T $(LDSCRIPT)
 #because libopencm3 is slightly broken
 CPPFLAGS += -DSTM32F1
@@ -144,17 +145,13 @@ flash: $(BINARY).flash
 $(BINARY).elf: $(OBJS)
 	$(LD) $(LDFLAGS) $(ARCH_FLAGS) $(OBJS) $(LDLIBS) -o $(BINARY).elf
 
-
-main.o:
-	$(Q) $(CC) $(CFLAGS) $(INCLUDE_PATHS) $(ARCH_FLAGS) -o main.o -c main.c
-
 %.o: %.c
 	@#printf "  CC      $(*).c\n"
 	$(Q) $(CC) $(CFLAGS) $(INCLUDE_PATHS) $(ARCH_FLAGS) -o $(*).o -c $(*).c
 
-%.opp: %.cpp
-	@#printf "  CCX      $(*).cpp\n"
-	$(Q) $(CCX) $(CPPFLAGS) $(INCLUDE_PATHS) $(ARCH_FLAGS) -o $(*).opp -c $(*).cpp
+%.o: %.cpp
+	@#printf "  CXX      $(*).cpp\n"
+	$(Q) $(CXX) $(CPPFLAGS) $(INCLUDE_PATHS) $(ARCH_FLAGS) -o $(*).o -c $(*).cpp
 
 clean:
 	@#printf "  CLEAN\n"
@@ -180,6 +177,7 @@ telnet:;
     
     
 testecho:;
-	echo $(HL_LIBS)
-	echo $(OBJS)
+	$(Q) echo $(HL_LIBS_C)
+	$(Q) echo $(HL_LIBS_CPP)
+	$(Q) echo $(OBJS)
 #	echo $()
