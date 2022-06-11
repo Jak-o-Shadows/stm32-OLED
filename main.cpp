@@ -12,49 +12,12 @@
 
 #include "macros.h"
 #include "status.hpp"
-#include "protocol/drawing/fonts.h"
+#include "protocol/drawing/drawing.hpp"
+#include "periph/i2c/i2cMaster.hpp"
 
 // Older Bits
 
-
-// Generic i2c
-Status i2cSendBytes(uint32_t i2c, uint8_t addr, uint8_t data[], uint8_t numData)
-{
-
-    uint32_t reg32 __attribute__((unused));
-
-    //send start
-    i2c_send_start(i2c);
-
-    //wait for the switch to master mode.
-    while (!((I2C_SR1(i2c) & I2C_SR1_SB) &
-             (I2C_SR2(i2c) & (I2C_SR2_MSL | I2C_SR2_BUSY))))
-        ;
-
-    //send address
-    i2c_send_7bit_address(i2c, addr, I2C_WRITE);
-    //check for the ack
-    while (!(I2C_SR1(i2c) & I2C_SR1_ADDR))
-        ;
-    //must read SR2 to clear it
-    reg32 = I2C_SR2(i2c);
-
-    for (int i = 0; i < numData; i++)
-    {
-        i2c_send_data(i2c, data[i]);
-        while (!(I2C_SR1(i2c) & I2C_SR1_BTF))
-            ; //wait for byte transferred flag
-    }
-
-    //send stop condition
-    i2c_send_stop(i2c);
-    for (int i = 0; i < 200; i++)
-    {
-        __asm__("nop");
-    }
-
-    return STATUSok;
-}
+// I2C and DMA
 
 Status i2cSendBytesDMA(uint8_t addr, uint8_t data[], uint8_t numData)
 {
@@ -112,6 +75,36 @@ Status i2cSendBytesDMA(uint8_t addr, uint8_t data[], uint8_t numData)
     return STATUSok;
 }
 
+void i2cDma_setup(void)
+{
+
+    // Setup DMA with the i2c
+    //  @100 kHz, one byte takes 0.08 ms. => 1 pixel takes 0.01 ms
+    //  Hence the whole 128x32 screen takes a minimum of 4096*0.01 ms
+    //      = 40.96 ms.
+    // Ignoring a couple of things, this makes a full update rate of
+    //  just 24 Hz
+    //
+    // If using a line-by line paradigm, with a 32 pixel line, each line
+    //  takes 0.32 ms to transfer. This is ONLY an update rate of 3125 Hz
+    //      => the line by line paradigm probably works pretty damn easy
+    //
+    // i2c is slow...
+
+    // Use DMA to transfer
+    // I2C2 is DMA1 Channel 4 (TX)
+    // Setup DMA
+    dma_channel_reset(DMA1, DMA_CHANNEL4);
+
+    dma_set_peripheral_address(DMA1, DMA_CHANNEL4, (uint32_t)&I2C2_DR);
+    dma_enable_memory_increment_mode(DMA1, DMA_CHANNEL4);
+    dma_set_peripheral_size(DMA1, DMA_CHANNEL4, DMA_CCR_PSIZE_8BIT);
+    dma_set_memory_size(DMA1, DMA_CHANNEL4, DMA_CCR_MSIZE_8BIT);
+    dma_set_read_from_memory(DMA1, DMA_CHANNEL4);
+
+    dma_disable_channel(DMA1, DMA_CHANNEL4);
+}
+
 // SDS1036 OLED Specific
 
 typedef enum state_e
@@ -135,19 +128,6 @@ typedef struct SSD1306_s
     mode_t mode;
 } SSD1306;
 
-#define WIDTH 32
-#define HEIGHT 128
-#define segmentPixelCount WIDTH
-#define segmentCommandSize segmentPixelCount / 8 + 1
-typedef union Segment_u {
-    uint8_t bytes[segmentCommandSize];
-    struct components_s
-    {
-        uint8_t dataCommand;
-        uint8_t pixelBuffer[segmentPixelCount / 8];
-    } components;
-} Segment_t;
-
 // Working variables
 static SSD1306 dev;
 static uint8_t segment;
@@ -166,19 +146,8 @@ static uint16_t msRotateCounter = 0;
 
 Status sendCommands(SSD1306 *dev, uint8_t commands[], uint8_t numCommands)
 {
-
     uint8_t commandAddress = 0; // D/C = 0, Co = 0
-
-    // Probably a nicer way of doing this?
-    uint8_t commandBuffer[1 + 256]; // Size hardcoded to type of `numCommands`
-
-    // Starts with the commandAddress
-    commandBuffer[0] = commandAddress;
-    for (int i = 0; i < numCommands; i++)
-    {
-        commandBuffer[i + 1] = commands[i];
-    }
-    return i2cSendBytes(I2C2, dev->address, commandBuffer, 1 + numCommands);
+    return i2cMaster_sendreg(I2C2, dev->address, commandAddress, commands, numCommands);
 }
 
 Status init(SSD1306 *dev)
@@ -288,141 +257,9 @@ Status scrollState(SSD1306 *dev, bool enabled)
     return sendCommands(dev, &bytes, 1);
 }
 
-// Graphics Drawing Functions
 
-Status lookupPixelLocation(uint8_t *byteIdx, uint8_t *bitIdx, uint8_t segmentStart_x, uint8_t segmentStart_y, uint8_t segmentSize_x, uint8_t segmentSize_y, uint8_t pixel_x, uint8_t pixel_y)
-{
-    // First check if the pixel is within the segment
-    if (((pixel_x >= segmentStart_x) && (pixel_x < (segmentStart_x + segmentSize_x))) &&
-        ((pixel_y >= segmentStart_y) && (pixel_y < (segmentStart_y + segmentSize_y))))
-    {
-        // Continue proceccessing
-    }
-    else
-    {
-        return STATUSbad;
-    }
 
-    // The pixel is within the display area set by the buffer - figure
-    //  out where to set
 
-    // First determine which pixel buffer byte the pixel is in
-    //  Now, the bytes go x, then y. Always.
-    uint8_t local_x = pixel_x - segmentStart_x;
-    uint8_t local_y = pixel_y - segmentStart_y;
-    uint8_t byteColumnIndex = local_x / 8;
-    uint8_t byteRowIndex = local_y;
-    *byteIdx = (byteRowIndex * segmentSize_x / 8) + byteColumnIndex;
-    *bitIdx = local_x - byteColumnIndex * 8;
-
-    return STATUSok;
-}
-
-Status pixelSet(Segment_t *buffer, uint8_t segmentStart_x, uint8_t segmentStart_y, uint8_t segmentSize_x, uint8_t segmentSize_y, uint8_t pixel_x, uint8_t pixel_y)
-{
-    // Set a pixel in the segment, if applicable
-
-    uint8_t byteIdx;
-    uint8_t bitIdx;
-    Status sts = lookupPixelLocation(&byteIdx, &bitIdx, segmentStart_x, segmentStart_y, segmentSize_x, segmentSize_y, pixel_x, pixel_y);
-
-    if (sts == STATUSok)
-    {
-        SetBit(bitIdx, buffer->components.pixelBuffer[byteIdx]);
-
-        return STATUSok;
-    }
-    else
-    {
-        return sts;
-    }
-}
-
-Status pixelClear(Segment_t *buffer, uint8_t segmentStart_x, uint8_t segmentStart_y, uint8_t segmentSize_x, uint8_t segmentSize_y, uint8_t pixel_x, uint8_t pixel_y)
-{
-    // Clear a pixel in the segment, if applicable
-    uint8_t byteIdx;
-    uint8_t bitIdx;
-    Status sts = lookupPixelLocation(&byteIdx, &bitIdx, segmentStart_x, segmentStart_y, segmentSize_x, segmentSize_y, pixel_x, pixel_y);
-
-    if (sts == STATUSok)
-    {
-        ClearBit(bitIdx, buffer->components.pixelBuffer[byteIdx]);
-
-        return STATUSok;
-    }
-    else
-    {
-        return sts;
-    }
-}
-
-Status text(Segment_t *buffer, uint8_t segmentStart_x, uint8_t segmentStart_y, uint8_t segmentSize_x, uint8_t segmentSize_y, uint8_t topLeft_x, uint8_t topLeft_y, char character)
-{
-    // Draw a text character if it is appplicable to the segment at all
-    // First check if any of the character is useful
-
-    // First check if the character is within the segment
-
-    /*
-    uint8_t bottomRight_x = topLeft_x + charWidth;
-    uint8_t bottomRight_y = topLeft_y + charHeight;
-    bool draw = false;
-    if ((topLeft_x >= segmentStart_x) && (topLeft_y >= segmentStart_y))
-    {
-        draw = true;
-        // It MAY be contained.
-        if ((bottomRight_x >= (segmentStart_x + segmentSize_x)) && (bottomRight_y <= (segmentStart_y + segmentSize_y)))
-        {
-            // Continue
-            draw = true;
-        }
-    }
-    draw = true;
-
-    if (!draw)
-    {
-        return STATUSbad;
-    }
-    */
-
-    // The character is within the segment - hence iterate over its pixels and draw it
-    uint16_t charWidth = fontWidthGet(character);
-    uint16_t charHeight = fontHeightGet(character);
-
-    uint16_t numPixels = fontNumberPixelsGet(character);
-    uint16_t *pixels = fontGet(character);
-
-    // Clear a pixel in the segment, if applicable
-    uint8_t byteIdx;
-    uint8_t bitIdx;
-    for (int pxNum = 0; pxNum < numPixels; pxNum++)
-    {
-        uint8_t x = topLeft_x + pixels[pxNum] - charWidth * (pixels[pxNum] / charWidth); // Remember, integer division floors
-        uint8_t y = topLeft_y + pixels[pxNum] / charWidth;
-        Status sts = lookupPixelLocation(&byteIdx, &bitIdx, segmentStart_x, segmentStart_y, segmentSize_x, segmentSize_y, y, x);
-        if (sts == STATUSok)
-        {
-            ClearBit(bitIdx, buffer->components.pixelBuffer[byteIdx]);
-        }
-    }
-}
-
-Status words(Segment_t *buffer, uint8_t segmentStart_x, uint8_t segmentStart_y, uint8_t segmentSize_x, uint8_t segmentSize_y, uint8_t topLeft_x, uint8_t topLeft_y, char word[], uint8_t wordLength)
-{
-    // Write a word into the segment
-
-    uint8_t x = topLeft_x;
-    uint8_t y = topLeft_y;
-
-    uint8_t spaceWidth = 3;
-
-    for (int charIdx = 0; charIdx < wordLength; charIdx++)
-    {
-        text(buffer, segmentStart_x, segmentStart_y, segmentSize_x, segmentSize_y, x, y, word[charIdx]);
-        x = x + spaceWidth + fontWidthGet(word[charIdx]);
-    }
-}
 
 void clock_setup(void)
 {
@@ -521,56 +358,7 @@ static void timer_setup(void)
     timer_enable_irq(TIM2, TIM_DIER_CC1IE);
 }
 
-/////////////////////////////////////////////////////////
-//////////                     //////////////////////////
-/////////////////////////////////////////////////////////
 
-void i2c_setup(void)
-{
-
-    //disable i2c before changing config
-    i2c_peripheral_disable(I2C2);
-    i2c_reset(I2C2);
-
-    i2c_set_standard_mode(I2C2);
-    i2c_set_clock_frequency(I2C2, I2C_CR2_FREQ_16MHZ);
-
-    i2c_set_ccr(I2C2, 0xAA);
-    i2c_set_dutycycle(I2C2, I2C_CCR_DUTY_DIV2);
-
-    i2c_set_trise(I2C2, 0x11);
-
-    i2c_enable_ack(I2C2);
-
-    //enable it
-    i2c_peripheral_enable(I2C2);
-
-    // Setup DMA with the i2c
-    //  @100 kHz, one byte takes 0.08 ms. => 1 pixel takes 0.01 ms
-    //  Hence the whole 128x32 screen takes a minimum of 4096*0.01 ms
-    //      = 40.96 ms.
-    // Ignoring a couple of things, this makes a full update rate of
-    //  just 24 Hz
-    //
-    // If using a line-by line paradigm, with a 32 pixel line, each line
-    //  takes 0.32 ms to transfer. This is ONLY an update rate of 3125 Hz
-    //      => the line by line paradigm probably works pretty damn easy
-    //
-    // i2c is slow...
-
-    // Use DMA to transfer
-    // I2C2 is DMA1 Channel 4 (TX)
-    // Setup DMA
-    dma_channel_reset(DMA1, DMA_CHANNEL4);
-
-    dma_set_peripheral_address(DMA1, DMA_CHANNEL4, (uint32_t)&I2C2_DR);
-    dma_enable_memory_increment_mode(DMA1, DMA_CHANNEL4);
-    dma_set_peripheral_size(DMA1, DMA_CHANNEL4, DMA_CCR_PSIZE_8BIT);
-    dma_set_memory_size(DMA1, DMA_CHANNEL4, DMA_CCR_MSIZE_8BIT);
-    dma_set_read_from_memory(DMA1, DMA_CHANNEL4);
-
-    dma_disable_channel(DMA1, DMA_CHANNEL4);
-}
 
 /////////////////////////////////////////////////////
 ////////////// Main Loop   //////////////////////////
@@ -578,13 +366,16 @@ void i2c_setup(void)
 
 int main(void)
 {
+
+    const uint32_t i2c = I2C2; //i2c2
+
+
     clock_setup();
     gpio_setup();
     usart_setup();
-    i2c_setup();
+    i2cMaster_setup(i2c);
+    i2cDma_setup();
 
-
-    uint32_t i2c = I2C2; //i2c2
 
     // Initialise device properties
     dev.address = 0b0111100;
@@ -617,7 +408,7 @@ int main(void)
         uint8_t bytes[] = {
             0x40,
             0};
-        i2cSendBytes(I2C2, dev.address, bytes, 2);
+        i2cMaster_send(I2C2, dev.address, bytes, 2);
     }
 
     // kick it all off
