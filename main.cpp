@@ -12,6 +12,7 @@
 
 #include "macros.h"
 #include "status.hpp"
+#include "devices/ssd1306/ssd1306.hpp"
 #include "protocol/drawing/drawing.hpp"
 #include "periph/i2c/i2cMaster.hpp"
 
@@ -105,31 +106,9 @@ void i2cDma_setup(void)
     dma_disable_channel(DMA1, DMA_CHANNEL4);
 }
 
-// SDS1036 OLED Specific
-
-typedef enum state_e
-{
-    DEAD = 0,
-    INIT,
-    OK
-} state_t;
-
-typedef enum mode_e
-{
-    PAGE = 0,
-    HORI,
-    VERT
-} mode_t;
-
-typedef struct SSD1306_s
-{
-    state_t state;
-    uint8_t address;
-    mode_t mode;
-} SSD1306;
 
 // Working variables
-static SSD1306 dev;
+static SSD1306_t dev;
 static uint8_t segment;
 static uint8_t segmentIdx;
 static Segment_t buffer1;
@@ -141,123 +120,6 @@ static const uint8_t bufferCount = 2;
 static uint8_t rotateX = 0;
 static const uint16_t msRotate = 20;
 static uint16_t msRotateCounter = 0;
-
-// Start functions
-
-Status sendCommands(SSD1306 *dev, uint8_t commands[], uint8_t numCommands)
-{
-    uint8_t commandAddress = 0; // D/C = 0, Co = 0
-    return i2cMaster_sendreg(I2C2, dev->address, commandAddress, commands, numCommands);
-}
-
-Status init(SSD1306 *dev)
-{
-
-    uint8_t commands[] = {
-        // Display Off
-        0xAE,
-        // Display Offset
-        0xD3, // Command
-        0,    // Command payload, (No Offset)
-        // Display Start line
-        0x40,
-        // Segment Re-Map
-        0xA0 | 0x1, // Rotate screen 180
-        // Vertical Mode - works better with the 'line based' paradigm
-        0x20, // Set memory mode command
-        1,    // Vertical
-        // COM SCAN DEC
-        0xC8,
-        // COM PINS
-        0xDA,
-        0x02, // Specific to 128x32 px
-        // Multiplex
-        0xA8,
-        32 - 1,
-        // Set Oscillator Frequency
-        0xD5, // Command
-        0x80, // Recommended value (p64 of App Note)
-        // Charge Pump
-        0x8D,
-        // pre-Charge
-        0xD9,
-        0xF1,
-        // Internal VCC
-        0x14,
-        // VCOM Detect
-        0xD8,
-        0x40,
-        // Display Contrast
-        0x81, // Command
-        128,  // Set between 1ish and 255ish
-        // Display resume
-        0xA4,
-        // Normal display
-        0xA6,
-        // Display on
-        0xAF};
-
-    static const uint8_t numCommands = 25;
-
-    return sendCommands(dev, commands, numCommands);
-
-    return STATUSok;
-}
-
-void OLED_address(SSD1306 *dev, uint8_t x, uint8_t y)
-{
-    uint8_t commands[] = {
-        // Set column addressing
-        0x21,
-        0x00,
-        128 - 1,
-        // Set page addressing extents
-        0x22,
-        0x00,
-        32 / 8 - 1};
-    sendCommands(dev, commands, 6);
-}
-
-// Scrolling
-Status setupScroll(SSD1306 *dev, bool scrollRight)
-{
-    uint8_t scrollDir;
-    if (scrollRight)
-    {
-        scrollDir = 0x26;
-    }
-    else
-    {
-        scrollDir = 0x27;
-    }
-
-    uint8_t commands[] = {
-        scrollDir, // Command - scroll left or right
-        0x00,      // Dummy Byte
-        0,         // Start page address
-        0,         // Scroll update rate - non-linear mapping in terms of frames form data sheet
-        0x0F,      // End page address
-        0,         // Dummy Byte
-        0xFF       // Dummy Byte
-    };
-    return sendCommands(dev, commands, 7);
-}
-
-Status scrollState(SSD1306 *dev, bool enabled)
-{
-    uint8_t bytes;
-    if (enabled)
-    {
-        bytes = 0x2F;
-    }
-    else
-    {
-        bytes = 0x2E;
-    }
-    return sendCommands(dev, &bytes, 1);
-}
-
-
 
 
 
@@ -381,6 +243,7 @@ int main(void)
     dev.address = 0b0111100;
     dev.mode = PAGE;
     dev.state = DEAD;
+    dev.i2c = I2C2;
 
     // Initialise segment buffers
     buffer1.components.dataCommand = 0x40;
