@@ -10,11 +10,21 @@
 #include <stdint.h>
 #include <string.h>
 
+// FreeRTOS includes
+#include "FreeRTOS.h"
+#include "task.h"
+
+
 #include "macros.h"
 #include "status.hpp"
 #include "devices/ssd1306/ssd1306.hpp"
 #include "protocol/drawing/drawing.hpp"
 #include "periph/i2c/i2cMaster.hpp"
+
+#include "taskBlink.hpp"
+
+
+HeartbeatTask heartbeat;
 
 // Older Bits
 
@@ -237,6 +247,17 @@ int main(void)
     usart_setup();
     i2cMaster_setup(i2c);
     i2cDma_setup();
+
+
+
+    heartbeat.start("heartbeat", configMINIMAL_STACK_SIZE, 1);
+
+    vTaskStartScheduler();
+    for(;;);
+    return 0;
+
+
+
 
 
     // Initialise device properties

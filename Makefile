@@ -5,6 +5,7 @@ ROOT =
 SUBHIGH = 
 SUBMID = 
 #Use a separate file to keep track of own includes
+INCLUDE_PATHS = -I .
 HL_LIBS_C =
 HL_LIBS_CPP =
 include Makefile.config
@@ -37,6 +38,28 @@ LDFLAGS     += --specs=nosys.specs
 
 LIBNAME = opencm3_stm32f1
 #LIBNAME = opencm3_stm32f4
+
+# FreeRTOS
+
+freertosPath = ./freertos
+freertosKernelPath = $(freertosPath)/FreeRTOS/FreeRTOS-Kernel
+# Generic
+INCLUDE_PATHS += -I $(freertosKernelPath)/include
+HL_LIBS_C += $(freertosKernelPath)/tasks.c
+HL_LIBS_C += $(freertosKernelPath)/list.c
+HL_LIBS_C += $(freertosKernelPath)/queue.c
+HL_LIBS_C += $(freertosKernelPath)/timers.c
+HL_LIBS_C += $(freertosKernelPath)/event_groups.c
+HL_LIBS_C += $(freertosKernelPath)/stream_buffer.c
+HL_LIBS_C += $(freertosKernelPath)/croutine.c
+# Platform Specific
+INCLUDE_PATHS += -I $(freertosKernelPath)/portable/GCC/ARM_CM3
+HL_LIBS_C += $(freertosKernelPath)/portable/GCC/ARM_CM3/port.c
+# Malloc Behaviour
+HL_LIBS_C += $(freertosKernelPath)/portable/MemMang/heap_4.c
+
+
+
 
 
 
@@ -91,9 +114,13 @@ CPPFLAGS += -DSTM32F1
 
 
 #Includes
-INCLUDE_PATHS = 
 INCLUDE_PATHS += -I $(INCLUDE_DIR)
 INCLUDE_PATHS += $(SUBHIGH)
+
+
+
+
+
 
 
 LDLIBS		+= -l$(LIBNAME)
