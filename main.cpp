@@ -119,7 +119,7 @@ void i2cDma_setup(void)
 
 // Working variables
 static SSD1306_t dev;
-static uint8_t segment;
+static uint8_t segment;  // Segment per screen size
 static uint8_t segmentIdx;
 static Segment_t buffer1;
 static Segment_t buffer2;
@@ -128,7 +128,7 @@ static const uint8_t bufferCount = 2;
 
 // TEMP - drawing function
 static uint8_t rotateX = 0;
-static const uint16_t msRotate = 20;
+static const uint16_t msRotate = 4000;
 static uint16_t msRotateCounter = 0;
 
 
@@ -250,11 +250,11 @@ int main(void)
 
 
 
-    heartbeat.start("heartbeat", configMINIMAL_STACK_SIZE, 1);
+//    heartbeat.start("heartbeat", configMINIMAL_STACK_SIZE, 1);
 
-    vTaskStartScheduler();
-    for(;;);
-    return 0;
+//    vTaskStartScheduler();
+//    for(;;);
+//    return 0;
 
 
 
@@ -267,10 +267,10 @@ int main(void)
     dev.i2c = I2C2;
 
     // Initialise segment buffers
-    buffer1.size_x = 32;
-    buffer1.size_y = 1;
-    buffer2.size_x = 32;
-    buffer2.size_y = 1;
+    buffer1.size_x = WIDTH;
+    buffer1.size_y = HEIGHT;
+    buffer2.size_x = WIDTH;
+    buffer2.size_y = HEIGHT;
     buffer1.data.components.dataCommand = 0x40;
     buffer2.data.components.dataCommand = 0x40;
     memset(buffer1.data.components.pixelBuffer, 0xFF, segmentPixelCount / 8);
@@ -429,7 +429,7 @@ void dma1_channel4_isr(void)
         OLED_address(&dev, 0, 0);
     }
     segment++;
-    if (segment > ((WIDTH * HEIGHT) / segmentPixelCount))
+    if (segment*segmentPixelCount >= (SCREEN_WIDTH * SCREEN_HEIGHT) )
     {
         segment = 0;
         // Disable TCIF interrupt flag
@@ -454,17 +454,25 @@ void dma1_channel4_isr(void)
 
     // Then prepare next buffer to send
     Segment_t *nextBuffer = buffers[segmentIdx];
-    memset(nextBuffer->data.components.pixelBuffer, 0xFF, segmentPixelCount / 8);
+    uint8_t fill = 0xFF;
+    if (segmentIdx == 0){
+        fill = 0xFF;
+    } else {
+        fill = 0xFF;
+    }
+    memset(nextBuffer->data.components.pixelBuffer, fill, segmentPixelCount / 8);
+
 
     // Draw a line across X near the bottom
-    for (uint8_t row = 0; row < HEIGHT; row++)
+    for (uint8_t row = 0; row < SCREEN_HEIGHT; row++)
     {
-        pixelClear(nextBuffer, 0, segment, WIDTH - 4, row);
+        pixelInvert(nextBuffer, 0, segment*nextBuffer->size_y, WIDTH - 12 - segment/8, row);
     }
 
     // Draw some characters
-    char word[] = "Jak_o_Shadows";
+     char word[] = "Jak_o_Shadows";
     uint8_t wordLength = 13;
-    uint8_t start = rotateX + HEIGHT / 2; // Works because overflow
-    words(nextBuffer, 0, segment, start, 1, word, wordLength);
+    uint8_t start = rotateX + SCREEN_HEIGHT/2;
+    words(nextBuffer, 0, segment*nextBuffer->size_y, start, 1, word, wordLength);
+
 }

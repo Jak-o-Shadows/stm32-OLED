@@ -103,6 +103,7 @@ CFLAGS += -T $(LDSCRIPT)
 CFLAGS += -DSTM32F1
 
 CPPFLAGS =
+CPPFLAGS += -g
 CPPFLAGS += -fno-common -ffunction-sections -fdata-sections
 CPPFLAGS += -MD
 CPPFLAGS += -Wall -Wundef
