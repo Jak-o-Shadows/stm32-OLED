@@ -1,9 +1,9 @@
 #this makefile is helped in part by https://github.com/libopencm3/libopencm3-examples/blob/master/examples/Makefile.rules
 
 #My includes/own library location
-ROOT = 
-SUBHIGH = 
-SUBMID = 
+ROOT =
+SUBHIGH =
+SUBMID =
 #Use a separate file to keep track of own includes
 INCLUDE_PATHS = -I .
 HL_LIBS_C =
@@ -22,13 +22,13 @@ SCRIPT_DIR = $(libopenCM3)/scripts
 
 ######Device specific things
 DEVICE = stm32f103c8t6
-ARCH_FLAGS = 
+ARCH_FLAGS =
 
 
 #######  LD Script #################
 # libopencm3 makefile that does the ldscript
 #uses libopencm3 to make a .ld file for the specified device
-LDFLAGS		?= 
+LDFLAGS		?=
 LDFLAGS		+= --static -nostartfiles
 LDFLAGS		+= -L$(LIB_DIR)
 LDFLAGS		+= -T$(LDSCRIPT)
@@ -64,13 +64,13 @@ HL_LIBS_C += $(freertosKernelPath)/portable/MemMang/heap_4.c
 
 
 
-#what is the main file 
+#what is the main file
 BINARY = main
 OBJS += $(HL_LIBS_C:.c=.o) $(HL_LIBS_CPP:.cpp=.o)
 
 
 
-toolchainPath ?= 
+toolchainPath ?=
 
 PREFIX		?= $(toolchainPath)arm-none-eabi
 
@@ -85,7 +85,7 @@ GDB		:= $(PREFIX)-gdb
 
 
 
-CFLAGS = 
+CFLAGS =
 #with thanks to libopencm3 makefile
 CFLAGS += -g
 CFLAGS += -Wextra -Wshadow -Wimplicit-function-declaration
@@ -102,7 +102,7 @@ CFLAGS += -T $(LDSCRIPT)
 #because libopencm3 is slightly broken
 CFLAGS += -DSTM32F1
 
-CPPFLAGS = 
+CPPFLAGS =
 CPPFLAGS += -fno-common -ffunction-sections -fdata-sections
 CPPFLAGS += -MD
 CPPFLAGS += -Wall -Wundef
@@ -124,11 +124,13 @@ INCLUDE_PATHS += $(SUBHIGH)
 
 
 LDLIBS		+= -l$(LIBNAME)
-LDLIBS		+= -Wl,--start-group -lc -lgcc -lnosys -Wl,--end-group 
+LDLIBS		+= -Wl,--start-group -lc -lgcc -lnosys -Wl,--end-group
 #include <math.h>
 LDLIBS      += -lm
 
-	
+include tests.mk
+
+
 .SUFFIXES: .elf .bin .hex .srec .list .map .images
 .SECONDEXPANSION:
 .SECONDARY:
@@ -198,13 +200,28 @@ debug: main.elf main.bin;
 telnet:;
 	telnet localhost 4446
 
-
-    
-    
-    
-    
 testecho:;
 	$(Q) echo $(HL_LIBS_C)
 	$(Q) echo $(HL_LIBS_CPP)
 	$(Q) echo $(OBJS)
 #	echo $()
+
+
+
+tests: test.exe
+	./test.exe
+
+%.to: %.c
+	$(Q) $(TEST_CC) $(TEST_CFLAGS) -o $(*).to -c $(*).c
+
+%.to: %.cpp
+	$(Q) $(TEST_CXX) $(TEST_CXXFLAGS) -o $(*).to -c $(*).cpp
+	$(Q) $(TEST_CXX) -c -o $@ $< $(TEST_CXXFLAGS)
+
+test.exe: ${TEST_OBJS}
+	$(TEST_LD) -o $@ $^ $(TEST_CXXFLAGS) $(TEST_LDFLAGS)
+
+testtestecho:
+	echo $(TEST_CXXFLAGS)
+
+
