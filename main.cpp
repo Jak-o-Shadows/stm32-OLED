@@ -119,16 +119,13 @@ void i2cDma_setup(void)
 
 // Working variables
 static SSD1306_t dev;
-static uint8_t segment;  // Segment per screen size
-static uint8_t segmentIdx;
-static Segment_t buffer1;
-static Segment_t buffer2;
-static Segment_t *buffers[] = {&buffer1, &buffer2};
-static const uint8_t bufferCount = 2;
+uint8_t segment;
+uint8_t segmentIdx;
+Display<SCREEN_WIDTH, SCREEN_HEIGHT, WIDTH, HEIGHT, 2> display;
 
 // TEMP - drawing function
 static uint8_t rotateX = 0;
-static const uint16_t msRotate = 4000;
+static const uint16_t msRotate = 60000;
 static uint16_t msRotateCounter = 0;
 
 
@@ -190,7 +187,7 @@ static void gpio_setup(void)
 
     /* Setup GPIO for LED use. */
     gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_50_MHZ,
-                  GPIO_CNF_OUTPUT_PUSHPULL, GPIO13);
+                  GPIO_CNF_OUTPUT_PUSHPULL, GPIO13 | GPIO14);
 
     //setup i2c pins
     gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_50_MHZ,
@@ -266,18 +263,9 @@ int main(void)
     dev.state = DEAD;
     dev.i2c = I2C2;
 
-    // Initialise segment buffers
-    buffer1.size_x = WIDTH;
-    buffer1.size_y = HEIGHT;
-    buffer2.size_x = WIDTH;
-    buffer2.size_y = HEIGHT;
-    buffer1.data.components.dataCommand = 0x40;
-    buffer2.data.components.dataCommand = 0x40;
-    memset(buffer1.data.components.pixelBuffer, 0xFF, segmentPixelCount / 8);
-    memset(buffer2.data.components.pixelBuffer, 0, segmentPixelCount / 8);
-    // Initialise double buffer & tracking variables
-    segment = 0;
-    segmentIdx = 0;
+    // Initialise multiple buffer & tracking variables
+    segment = 0;  // of the overall screen
+    segmentIdx = 0;  // of the segments
 
     init(&dev);
 
@@ -429,7 +417,8 @@ void dma1_channel4_isr(void)
         OLED_address(&dev, 0, 0);
     }
     segment++;
-    if (segment*segmentPixelCount >= (SCREEN_WIDTH * SCREEN_HEIGHT) )
+    if ((segment*display.segment_width*display.segment_height) >= 
+        (display.display_width * display.display_height) )
     {
         segment = 0;
         // Disable TCIF interrupt flag
@@ -441,38 +430,46 @@ void dma1_channel4_isr(void)
         dma_enable_transfer_complete_interrupt(DMA1, DMA_CHANNEL4);
     }
 
-    // Then swap buffer
-    Segment_t activeBuffer = *buffers[segmentIdx];
+    // Send the initial buffer
+    i2cSendBytesDMA(dev.address, display.segments[segmentIdx].data.bytes, display.segments[segmentIdx].bytes_len);
+
+    // Then swap buffer to prepare the next one.
     segmentIdx++;
-    if (segmentIdx >= bufferCount)
+    if (segmentIdx >= display.num_segments)
     {
         segmentIdx = 0;
+        rotateX -= 5;
+        dma_enable_transfer_complete_interrupt(DMA1, DMA_CHANNEL4);
+        uint8_t bytes[] = {0xFF};
+        i2cSendBytesDMA(dev.address, bytes, 1);
     }
 
-    // Then send
-    i2cSendBytesDMA(dev.address, activeBuffer.data.bytes, segmentCommandSize);
-
     // Then prepare next buffer to send
-    Segment_t *nextBuffer = buffers[segmentIdx];
-    uint8_t fill = 0xFF;
-    if (segmentIdx == 0){
-        fill = 0xFF;
+
+    // First clear it
+    uint8_t fill = 0;
+    if (segmentIdx==0){
+        fill = 0;
     } else {
         fill = 0xFF;
     }
-    memset(nextBuffer->data.components.pixelBuffer, fill, segmentPixelCount / 8);
-
+    memset(display.segments[segmentIdx].data.components.pixelBuffer, fill, display.segments[segmentIdx].bytes_len-1);
 
     // Draw a line across X near the bottom
+    uint8_t offset;
     for (uint8_t row = 0; row < SCREEN_HEIGHT; row++)
     {
-        pixelInvert(nextBuffer, 0, segment*nextBuffer->size_y, WIDTH - 12 - segment/8, row);
+        offset = segment*4;
+        offset = offset % display.display_height;
+        pixelInvert(&display.segments[segmentIdx], 0, segment*display.segments[segmentIdx].size_y, display.segment_width - offset, row);
     }
 
     // Draw some characters
      char word[] = "Jak_o_Shadows";
     uint8_t wordLength = 13;
     uint8_t start = rotateX + SCREEN_HEIGHT/2;
-    words(nextBuffer, 0, segment*nextBuffer->size_y, start, 1, word, wordLength);
+    words(&display.segments[segmentIdx], 0, segment*display.segments[segmentIdx].size_y, start, 0, word, wordLength);
+
+    gpio_toggle(GPIOC, GPIO14);
 
 }
