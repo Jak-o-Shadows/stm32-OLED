@@ -461,14 +461,14 @@ void dma1_channel4_isr(void)
     {
         offset = segment*4;
         offset = offset % display.display_height;
-        pixelInvert(&display.segments[segmentIdx], 0, segment*display.segments[segmentIdx].size_y, display.segment_width - offset, row);
+        pixelInvert(&display.segments[segmentIdx], display.getSegmentXCoord(segment), display.getSegmentYCoord(segment), display.segment_width - offset, row);
     }
 
     // Draw some characters
      char word[] = "Jak_o_Shadows";
     uint8_t wordLength = 13;
     uint8_t start = rotateX + SCREEN_HEIGHT/2;
-    words(&display.segments[segmentIdx], 0, segment*display.segments[segmentIdx].size_y, start, 0, word, wordLength);
+    words(&display.segments[segmentIdx], display.getSegmentXCoord(segment), display.getSegmentYCoord(segment), start, 0, word, wordLength);
 
     gpio_toggle(GPIOC, GPIO14);
 
