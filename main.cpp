@@ -14,120 +14,16 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-
-#include "macros.h"
 #include "status.hpp"
-#include "devices/ssd1306/ssd1306.hpp"
-#include "protocol/drawing/drawing.hpp"
-#include "periph/i2c/i2cMaster.hpp"
 
 #include "taskBlink.hpp"
+#include "OledTask.hpp"
+
+#include "devices/gy521/gy521.hpp"
 
 
 HeartbeatTask heartbeat;
-
-// Older Bits
-
-// I2C and DMA
-
-Status i2cSendBytesDMA(uint8_t addr, uint8_t data[], uint8_t numData)
-{
-
-    dma_disable_channel(DMA1, DMA_CHANNEL4);
-
-    dma_set_memory_address(DMA1, DMA_CHANNEL4, (uint32_t)data);
-
-    dma_set_number_of_data(DMA1, DMA_CHANNEL4, numData);
-
-    // Start the transaction
-    uint32_t reg32 __attribute__((unused));
-
-    //send start
-    i2c_send_start(I2C2);
-
-    //wait for the switch to master mode.
-    while (!((I2C_SR1(I2C2) & I2C_SR1_SB) &
-             (I2C_SR2(I2C2) & (I2C_SR2_MSL | I2C_SR2_BUSY))))
-        ;
-
-    //send address
-    i2c_send_7bit_address(I2C2, addr, I2C_WRITE);
-    //check for the ack
-    while (!(I2C_SR1(I2C2) & I2C_SR1_ADDR))
-        ;
-    //must read SR2 to clear it
-    reg32 = I2C_SR2(I2C2);
-
-    // Send the data
-    i2c_enable_dma(I2C2);
-
-    dma_enable_channel(DMA1, DMA_CHANNEL4);
-
-    uint16_t maxCheck = 65000;
-    while (maxCheck--)
-    {
-        if ((I2C_SR1(I2C2) & I2C_SR1_BTF))
-        {
-            break;
-        }
-    }
-
-    // Finish the transaction
-    i2c_send_stop(I2C2);
-    for (int i = 0; i < 200; i++)
-    {
-        __asm__("nop");
-    }
-
-    // Disable DMA
-    i2c_disable_dma(I2C2);
-    //dma_disable_channel(DMA1, DMA_CHANNEL4);
-
-    return STATUSok;
-}
-
-void i2cDma_setup(void)
-{
-
-    // Setup DMA with the i2c
-    //  @100 kHz, one byte takes 0.08 ms. => 1 pixel takes 0.01 ms
-    //  Hence the whole 128x32 screen takes a minimum of 4096*0.01 ms
-    //      = 40.96 ms.
-    // Ignoring a couple of things, this makes a full update rate of
-    //  just 24 Hz
-    //
-    // If using a line-by line paradigm, with a 32 pixel line, each line
-    //  takes 0.32 ms to transfer. This is ONLY an update rate of 3125 Hz
-    //      => the line by line paradigm probably works pretty damn easy
-    //
-    // i2c is slow...
-
-    // Use DMA to transfer
-    // I2C2 is DMA1 Channel 4 (TX)
-    // Setup DMA
-    dma_channel_reset(DMA1, DMA_CHANNEL4);
-
-    dma_set_peripheral_address(DMA1, DMA_CHANNEL4, (uint32_t)&I2C2_DR);
-    dma_enable_memory_increment_mode(DMA1, DMA_CHANNEL4);
-    dma_set_peripheral_size(DMA1, DMA_CHANNEL4, DMA_CCR_PSIZE_8BIT);
-    dma_set_memory_size(DMA1, DMA_CHANNEL4, DMA_CCR_MSIZE_8BIT);
-    dma_set_read_from_memory(DMA1, DMA_CHANNEL4);
-
-    dma_disable_channel(DMA1, DMA_CHANNEL4);
-}
-
-
-// Working variables
-static SSD1306_t dev;
-uint8_t segment;
-uint8_t segmentIdx;
-Display<SCREEN_WIDTH, SCREEN_HEIGHT, WIDTH, HEIGHT, 2> display;
-
-// TEMP - drawing function
-static uint8_t rotateX = 0;
-static const uint16_t msRotate = 60000;
-static uint16_t msRotateCounter = 0;
-
+OledTask oled;
 
 
 void clock_setup(void)
@@ -236,98 +132,43 @@ static void timer_setup(void)
 int main(void)
 {
 
-    const uint32_t i2c = I2C2; //i2c2
-
-
     clock_setup();
     gpio_setup();
     usart_setup();
-    i2cMaster_setup(i2c);
-    i2cDma_setup();
-
-
-
-//    heartbeat.start("heartbeat", configMINIMAL_STACK_SIZE, 1);
-
-//    vTaskStartScheduler();
-//    for(;;);
-//    return 0;
-
-
-
-
-
-    // Initialise device properties
-    dev.address = 0b0111100;
-    dev.mode = PAGE;
-    dev.state = DEAD;
-    dev.i2c = I2C2;
-
-    // Initialise multiple buffer & tracking variables
-    segment = 0;  // of the overall screen
-    segmentIdx = 0;  // of the segments
-
-    init(&dev);
-
-    // Send some data
-
-    // Delay
-    for (int i = 0; i < 10000; i++)
-    {
-        __asm__("nop");
-    }
-
-    // Clear the display
-    OLED_address(&dev, 0, 0);
-    for (int pxByte = 0; pxByte < 128 * 32 / 8; pxByte++)
-    {
-        uint8_t bytes[] = {
-            0x40,
-            0};
-        i2cMaster_send(I2C2, dev.address, bytes, 2);
-    }
-
-    // kick it all off
-    dma_enable_transfer_complete_interrupt(DMA1, DMA_CHANNEL4);
-    uint8_t bytes[] = {0xFF};
-    i2cSendBytesDMA(dev.address, bytes, 1);
-
-    gpio_toggle(GPIOC, GPIO13);
-
-    //dma1_channel4_isr();
-    for (int i = 0; i < 50000; i++)
-    {
-        __asm__("nop");
-        gpio_toggle(GPIOC, GPIO13);
-    }
-
     timer_setup();
     nvic_setup();
 
+    const uint32_t i2c = I2C2; //i2c2
+    i2cMaster_setup(i2c);
 
-    setupScroll(&dev, false);
-    scrollState(&dev, false);
+    GY521_t gy521_dev = {
+        .address = 0x68,
+        .i2c = I2C2,
+    };
+    int16_t accels[3];
+    int16_t gyros[3];
+    
+    Status sts;
+    sts = gy521_init(&gy521_dev);
 
-    bool inverted = false;
-    uint8_t commandsInvert[1];
-    while (1)
-    {
-        for (int i = 0; i < 5000000; i++)
-        {
+    while(1){
+        for(int i=0;i<50000;i++){
             __asm__("nop");
-        }
-        // Then invert display
-        if (inverted)
-        {
-            commandsInvert[0] = 0xA7;
-        }
-        else
-        {
-            commandsInvert[0] = 0xA6;
-        }
-        //sendCommands(&dev, commandsInvert, 1);
-        inverted = !inverted;
-    }
+        };
+        sts = gy521_read(&gy521_dev, accels, gyros);
+
+    };
+
+
+    /*
+    heartbeat.start("heartbeat", configMINIMAL_STACK_SIZE, 1);
+    oled.start("oled", configMINIMAL_STACK_SIZE, 1);
+
+    vTaskStartScheduler();
+    for(;;);
+    */
+    return 0;
+
 }
 
 /////////////////////////////////////////////////////
@@ -383,22 +224,8 @@ void tim2_isr(void)
         uint16_t compare_time = timer_get_counter(TIM2);
         timer_set_oc_value(TIM2, TIM_OC1, 10 + compare_time);
 
-        // Do the work
-        msRotateCounter++;
-        if (msRotateCounter > msRotate)
-        {
-            msRotateCounter = 0;
-
-            // Do the update
-            rotateX = rotateX - 5;
-            // Kick off update
-            dma_enable_transfer_complete_interrupt(DMA1, DMA_CHANNEL4);
-            uint8_t bytes[] = {0xFF};
-            i2cSendBytesDMA(dev.address, bytes, 1);
-
-            // Debug toggle LED
-            gpio_toggle(GPIOC, GPIO13);
-        }
+        // Debug toggle LED
+        gpio_toggle(GPIOC, GPIO13);
     }
 }
 
@@ -412,15 +239,15 @@ void dma1_channel4_isr(void)
         dma_clear_interrupt_flags(DMA1, DMA_CHANNEL4, DMA_TCIF);
     }
 
-    if (segment == 0)
+    if (oled.segment == 0)
     {
-        OLED_address(&dev, 0, 0);
+        OLED_address(&oled.dev, 0, 0);
     }
-    segment++;
-    if ((segment*display.segment_width*display.segment_height) >= 
-        (display.display_width * display.display_height) )
+    oled.segment++;
+    if ((oled.segment*oled.display.segment_width*oled.display.segment_height) >= 
+        (oled.display.display_width * oled.display.display_height) )
     {
-        segment = 0;
+        oled.segment = 0;
         // Disable TCIF interrupt flag
         dma_disable_transfer_complete_interrupt(DMA1, DMA_CHANNEL4);
     }
@@ -431,44 +258,40 @@ void dma1_channel4_isr(void)
     }
 
     // Send the initial buffer
-    i2cSendBytesDMA(dev.address, display.segments[segmentIdx].data.bytes, display.segments[segmentIdx].bytes_len);
+    oled.i2cSendBytesDMA(oled.dev.address, oled.display.segments[oled.segmentIdx].data.bytes, oled.display.segments[oled.segmentIdx].bytes_len);
 
     // Then swap buffer to prepare the next one.
-    segmentIdx++;
-    if (segmentIdx >= display.num_segments)
+    oled.segmentIdx++;
+    if (oled.segmentIdx >= oled.display.num_segments)
     {
-        segmentIdx = 0;
-        rotateX -= 5;
-        dma_enable_transfer_complete_interrupt(DMA1, DMA_CHANNEL4);
-        uint8_t bytes[] = {0xFF};
-        i2cSendBytesDMA(dev.address, bytes, 1);
+        oled.segmentIdx = 0;
     }
 
     // Then prepare next buffer to send
 
     // First clear it
     uint8_t fill = 0;
-    if (segmentIdx==0){
+    if (oled.segmentIdx==0){
         fill = 0;
     } else {
         fill = 0xFF;
     }
-    memset(display.segments[segmentIdx].data.components.pixelBuffer, fill, display.segments[segmentIdx].bytes_len-1);
+    memset(oled.display.segments[oled.segmentIdx].data.components.pixelBuffer, fill, oled.display.segments[oled.segmentIdx].bytes_len-1);
 
     // Draw a line across X near the bottom
     uint8_t offset;
-    for (uint8_t row = 0; row < SCREEN_HEIGHT; row++)
+    for (uint8_t row = 0; row < oled.display.display_height; row++)
     {
-        offset = segment*4;
-        offset = offset % display.display_height;
-        pixelInvert(&display.segments[segmentIdx], display.getSegmentXCoord(segment), display.getSegmentYCoord(segment), display.segment_width - offset, row);
+        offset = oled.segment*4;
+        offset = offset % oled.display.display_height;
+        pixelInvert(&oled.display.segments[oled.segmentIdx], oled.display.getSegmentXCoord(oled.segment), oled.display.getSegmentYCoord(oled.segment), oled.display.segment_width - offset, row);
     }
 
     // Draw some characters
      char word[] = "Jak_o_Shadows";
     uint8_t wordLength = 13;
-    uint8_t start = rotateX + SCREEN_HEIGHT/2;
-    words(&display.segments[segmentIdx], display.getSegmentXCoord(segment), display.getSegmentYCoord(segment), start, 0, word, wordLength);
+    uint8_t start = oled.rotateX + oled.display.display_height/2;
+    words(&oled.display.segments[oled.segmentIdx], oled.display.getSegmentXCoord(oled.segment), oled.display.getSegmentYCoord(oled.segment), start, 0, word, wordLength);
 
     gpio_toggle(GPIOC, GPIO14);
 
